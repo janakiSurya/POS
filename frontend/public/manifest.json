@@ -1,0 +1,17 @@
+{
+  "name": "Sri Sri Sathya Sai Automobiles",
+  "short_name": "SSSA POS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1C1C1E",
+  "theme_color": "#1C1C1E",
+  "description": "POS and inventory for Sri Sri Sathya Sai Automobiles",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

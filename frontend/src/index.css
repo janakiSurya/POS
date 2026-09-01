@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  --charcoal: #1c1c1e;
+  --charcoal-2: #2b2b2e;
+  --charcoal-3: #3a3a3e;
+  --white: #ffffff;
+  --white-muted: #a1a1a6;
+  --white-faint: #6b6b70;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+@theme inline {
+  --color-charcoal: var(--charcoal);
+  --color-charcoal-2: var(--charcoal-2);
+  --color-charcoal-3: var(--charcoal-3);
+  --color-white: var(--white);
+  --color-white-muted: var(--white-muted);
+  --color-white-faint: var(--white-faint);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--charcoal);
+  color: var(--white);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-receipt-root,
+  .print-receipt-root * {
+    visibility: visible;
+  }
+
+  .print-receipt-root {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #fff !important;
+  }
+
+  .receipt-sheet {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+}
