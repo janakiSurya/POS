@@ -35,7 +35,11 @@ export function LoginForm({ onDemo }) {
     <div className="flex min-h-full flex-col items-center justify-center bg-paper px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <img src="/logo.png" alt="Logo" className="mx-auto mb-4 h-20 w-20 object-contain" />
+          <img
+            src="/logo.png"
+            alt="Logo"
+            className="mx-auto mb-5 h-28 w-28 object-contain sm:h-32 sm:w-32"
+          />
           <h1 className="text-xl font-semibold tracking-tight text-ink">
             Sri Sri Sathya Sai Automobiles
           </h1>
