@@ -1,12 +1,20 @@
 import { cn } from "../../lib/format";
 
-export function Modal({ open, onClose, title, children, className }) {
+const MODAL_SIZES = {
+  md: "sm:max-w-md",
+  lg: "sm:max-w-3xl",
+  xl: "sm:max-w-5xl",
+  full: "sm:max-w-[min(100%,72rem)]",
+};
+
+export function Modal({ open, onClose, title, children, className, size = "md" }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-strong/30 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <div
         className={cn(
-          "w-full max-h-[92dvh] overflow-y-auto rounded-t-xl border border-ash bg-canvas p-4 shadow-sm sm:max-w-md sm:rounded-xl sm:p-6",
+          "w-full max-h-[92dvh] overflow-y-auto rounded-t-xl border border-ash bg-canvas p-4 shadow-sm sm:rounded-xl sm:p-6",
+          MODAL_SIZES[size] ?? MODAL_SIZES.md,
           className,
         )}
         role="dialog"

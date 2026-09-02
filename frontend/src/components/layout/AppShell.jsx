@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "../ui/Button";
+import { MobileMenuButton, MobileNavDrawer } from "./MobileNavDrawer";
 
 const staffLinks = [
   { to: "/pos", label: "POS" },
@@ -29,29 +31,62 @@ export function AppShell({
   const location = useLocation();
   const links = isOwner ? ownerLinks : staffLinks;
   const isPos = location.pathname.startsWith("/pos");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
+  const title = isPos
+    ? "Sathya Sai POS"
+    : shopName || "Sri Sri Sathya Sai Automobiles";
 
   return (
     <div className="flex min-h-full flex-col bg-paper">
+      <MobileNavDrawer
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        links={links}
+        pathname={location.pathname}
+        shopName={shopName}
+        sessionOpen={sessionOpen}
+        online={online}
+        onExpense={onExpense}
+        onCloseShift={onCloseShift}
+        onSignOut={onSignOut}
+      />
+
       <header className="no-print sticky top-0 z-30 border-b border-ash bg-canvas">
         <div
-          className={`mx-auto flex items-center gap-2 px-3 py-2.5 sm:gap-4 sm:px-4 sm:py-3 ${
+          className={`mx-auto flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 ${
             isPos ? "max-w-none" : "max-w-7xl"
           }`}
         >
-          <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
-            <img src="/logo.png" alt="" className="h-7 w-7 shrink-0 object-contain sm:h-8 sm:w-8" />
+          <MobileMenuButton
+            open={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+            className="-ml-1 md:hidden"
+          />
+
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3 md:flex-none">
+            <img
+              src="/logo.png"
+              alt=""
+              className="hidden h-8 w-8 shrink-0 object-contain sm:block"
+            />
             <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-ink sm:text-sm">
-                {isPos
-                  ? "Sathya Sai POS"
-                  : shopName || "Sri Sri Sathya Sai Automobiles"}
+              <p className="truncate text-sm font-semibold text-ink">{title}</p>
+              <p className="text-xs text-fog md:hidden">
+                {sessionOpen ? "Shift open" : "Shift closed"}
+                {!online ? " · Offline" : ""}
               </p>
-              <p className="hidden text-xs text-fog sm:block">
+              <p className="hidden text-xs text-fog md:block">
                 {sessionOpen ? "Shift open" : "Shift closed"}
                 {!online ? " · Offline" : ""}
               </p>
             </div>
           </div>
+
           <nav
             className={`hidden flex-1 items-center gap-1 md:flex ${
               isOwner ? "justify-start" : "justify-center"
@@ -71,31 +106,15 @@ export function AppShell({
               </Link>
             ))}
           </nav>
-          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
-            {isPos && !isOwner ? (
-              <Link
-                to="/sales"
-                className="rounded-lg px-2 py-1.5 text-xs font-medium text-fog hover:bg-paper hover:text-ink md:hidden"
-              >
-                Bills
-              </Link>
-            ) : null}
+
+          <div className="ml-auto hidden shrink-0 items-center gap-1 sm:gap-2 md:flex">
             {sessionOpen ? (
               <>
-                <Button
-                  variant="ghost"
-                  className="hidden px-2 text-xs sm:inline-flex"
-                  onClick={onExpense}
-                >
+                <Button variant="ghost" className="px-2 text-xs" onClick={onExpense}>
                   Expense
                 </Button>
-                <Button
-                  variant="secondary"
-                  className="px-2 text-[11px] sm:px-3 sm:text-xs"
-                  onClick={onCloseShift}
-                >
-                  <span className="hidden sm:inline">Close shift</span>
-                  <span className="sm:hidden">Close</span>
+                <Button variant="secondary" className="px-3 text-xs" onClick={onCloseShift}>
+                  Close shift
                 </Button>
               </>
             ) : null}
@@ -104,24 +123,8 @@ export function AppShell({
             </Button>
           </div>
         </div>
-        {!isPos || isOwner ? (
-        <nav className="flex gap-1 overflow-x-auto border-t border-ash px-2 py-1 md:hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {links.map((l) => (
-            <Link
-              key={l.to}
-              to={l.to}
-              className={`shrink-0 rounded-lg px-3 py-2.5 text-xs font-medium transition-colors active:scale-[0.98] ${
-                location.pathname.startsWith(l.to)
-                  ? "bg-[#dbeaff] text-ink"
-                  : "text-fog hover:bg-paper hover:text-ink"
-              }`}
-            >
-              {l.label}
-            </Link>
-          ))}
-        </nav>
-        ) : null}
       </header>
+
       <main
         className={`no-print mx-auto w-full flex-1 ${
           location.pathname.startsWith("/pos")

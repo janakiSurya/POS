@@ -210,7 +210,8 @@ export function SalesHistory() {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail?.invoice?.invoice_number ?? "Bill"}
-        className="max-h-[92dvh] max-w-3xl overflow-y-auto sm:max-h-[92vh] sm:rounded-xl"
+        size="lg"
+        className="max-h-[92dvh] overflow-y-auto sm:max-h-[92vh]"
       >
         {detail ? (
           <SalesInvoiceDocument

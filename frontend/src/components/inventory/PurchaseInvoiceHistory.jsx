@@ -184,7 +184,8 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail?.invoice?.invoice_number ?? "Purchase invoice"}
-        className="max-h-[92dvh] max-w-5xl overflow-y-auto sm:max-h-[92vh] sm:rounded-xl"
+        size="xl"
+        className="max-h-[92dvh] overflow-y-auto sm:max-h-[92vh]"
       >
         {detail ? (
           <PurchaseInvoiceDocument
