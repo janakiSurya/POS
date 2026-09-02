@@ -17,6 +17,7 @@ import { Input } from "../ui/Input";
 import { Card } from "../ui/Card";
 import { Modal } from "../ui/Modal";
 import { ReceiptPrint } from "./ReceiptPrint";
+import { PageHeader } from "../shared/PageHeader";
 
 function formatBillTime(createdAt) {
   return new Date(createdAt).toLocaleString("en-IN", {
@@ -110,32 +111,29 @@ export function SalesHistory() {
           )
         : null}
 
-      <div className="mx-auto max-w-5xl p-4 md:p-6">
+      <div className="mx-auto w-full max-w-5xl space-y-4 sm:space-y-6">
 
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-white">Customer bills</h1>
-          <p className="mt-1 text-sm text-white-muted">
-            View bills, download PDF or Excel, or reprint receipt
-          </p>
-        </div>
-        <Button variant="secondary" onClick={load} className="shrink-0">
+      <PageHeader
+        title="Customer bills"
+        description="View bills, download PDF or Excel, or reprint receipt"
+      >
+        <Button variant="secondary" onClick={load} className="w-full shrink-0 sm:w-auto">
           <RefreshCw className="mr-2 inline h-4 w-4" />
           Refresh
         </Button>
-      </div>
+      </PageHeader>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-white-faint" />
+      <div className="flex flex-col gap-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-silver" />
           <Input
-            className="pl-10"
+            className="py-2.5 pl-10 text-base sm:text-sm"
             placeholder="Search bill no. or customer phone…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {[
             { id: "today", label: "Today" },
             { id: "week", label: "7 days" },
@@ -145,10 +143,10 @@ export function SalesHistory() {
               key={f.id}
               type="button"
               onClick={() => setDateFilter(f.id)}
-              className={`rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+              className={`min-h-[44px] rounded-lg px-3 py-2.5 text-sm font-medium transition-colors active:scale-[0.98] ${
                 dateFilter === f.id
-                  ? "bg-white text-charcoal"
-                  : "border border-charcoal-3 text-white-muted hover:text-white"
+                  ? "bg-action text-canvas"
+                  : "border border-ash text-fog hover:text-ink"
               }`}
             >
               {f.label}
@@ -158,17 +156,17 @@ export function SalesHistory() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-white-muted">Loading bills…</p>
+        <p className="text-sm text-fog">Loading bills…</p>
       ) : filtered.length === 0 ? (
-        <Card className="p-8 text-center text-white-muted">
+        <Card className="p-8 text-center text-fog">
           <p>No bills match this filter.</p>
           {invoices.length > 0 ? (
-            <p className="mt-2 text-sm text-white-faint">
+            <p className="mt-2 text-sm text-silver">
               {invoices.length} bill{invoices.length === 1 ? "" : "s"} in total — try
               &quot;7 days&quot; or &quot;All&quot;.
             </p>
           ) : (
-            <p className="mt-2 text-sm text-white-faint">
+            <p className="mt-2 text-sm text-silver">
               No bills in local storage yet. Complete a sale on POS or tap Refresh.
             </p>
           )}
@@ -182,25 +180,25 @@ export function SalesHistory() {
                 key={inv.id}
                 type="button"
                 onClick={() => openDetail(inv.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-charcoal-3 bg-charcoal-2 px-4 py-3 text-left transition-colors hover:border-white/20 hover:bg-charcoal-3"
+                className="flex w-full flex-col gap-2 rounded-xl border border-ash bg-canvas px-3 py-3 text-left transition-colors active:scale-[0.99] hover:border-smoke hover:bg-paper sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4"
               >
                 <div className="min-w-0">
-                  <p className="font-mono font-semibold text-white">
+                  <p className="font-mono text-sm font-semibold text-ink">
                     {inv.invoice_number || "—"}
                   </p>
-                  <p className="mt-0.5 text-xs text-white-muted">
+                  <p className="mt-0.5 text-xs text-fog">
                     {formatBillTime(inv.created_at)}
-                    {cust ? ` · ${cust.name} · ${cust.phone}` : " · Walk-in"}
-                    {inv.bill_discount_percent > 0
-                      ? ` · Bill disc ${inv.bill_discount_percent}%`
-                      : ""}
+                    {cust ? ` · ${cust.name}` : " · Walk-in"}
                   </p>
+                  {cust?.phone ? (
+                    <p className="mt-0.5 text-xs text-silver">{cust.phone}</p>
+                  ) : null}
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-lg font-bold tabular-nums text-white">
+                <div className="flex items-center justify-between gap-3 sm:block sm:text-right">
+                  <p className="text-lg font-bold tabular-nums text-ink">
                     {formatInr(inv.total_amount)}
                   </p>
-                  <p className="text-xs text-white-faint">{inv.payment_method}</p>
+                  <p className="text-xs text-silver">{inv.payment_method}</p>
                 </div>
               </button>
             );
@@ -212,7 +210,7 @@ export function SalesHistory() {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail?.invoice?.invoice_number ?? "Bill"}
-        className="max-h-[92vh] max-w-3xl overflow-y-auto"
+        className="max-h-[92dvh] max-w-3xl overflow-y-auto sm:max-h-[92vh] sm:rounded-xl"
       >
         {detail ? (
           <SalesInvoiceDocument

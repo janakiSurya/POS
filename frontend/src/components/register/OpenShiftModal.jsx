@@ -34,7 +34,7 @@ export function OpenShiftModal({ open, userId, onDone }) {
 
   return (
     <BlockingModal open={open} title="Start daily shift">
-      <p className="mb-4 text-sm text-white-muted">
+      <p className="mb-4 text-sm text-fog">
         Enter opening cash in drawer and UPI balance before using the counter.
       </p>
       {error ? (

@@ -4,7 +4,7 @@ export function Select({ className, ...props }) {
   return (
     <select
       className={cn(
-        "w-full rounded-lg border border-charcoal-3 bg-charcoal px-3 py-2.5 text-white focus:border-white focus:outline-none focus:ring-1 focus:ring-white",
+        "w-full rounded-md border border-ash bg-canvas px-3 py-2 text-sm text-ink focus:border-electric focus:outline-none focus:ring-2 focus:ring-electric/20",
         className,
       )}
       {...props}
@@ -16,7 +16,7 @@ export function Input({ className, ...props }) {
   return (
     <input
       className={cn(
-        "w-full rounded-lg border border-charcoal-3 bg-charcoal px-3 py-2.5 text-white placeholder:text-white-faint focus:border-white focus:outline-none focus:ring-1 focus:ring-white",
+        "w-full rounded-md border border-ink/20 bg-canvas px-3 py-2 text-sm text-ink placeholder:text-silver focus:border-electric focus:outline-none focus:ring-2 focus:ring-electric/20",
         className,
       )}
       {...props}
@@ -26,7 +26,7 @@ export function Input({ className, ...props }) {
 
 export function Label({ children, className }) {
   return (
-    <label className={cn("block text-sm font-medium text-white-muted mb-1", className)}>
+    <label className={cn("mb-1 block text-sm font-medium text-graphite", className)}>
       {children}
     </label>
   );

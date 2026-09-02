@@ -29,7 +29,7 @@ function statusBadge(status) {
   const styles = {
     POSTED: "bg-success/20 text-success",
     PENDING_APPROVAL: "bg-warning/20 text-warning",
-    DRAFT: "bg-white/10 text-white-muted",
+    DRAFT: "bg-paper text-fog",
   };
   return styles[status] || styles.DRAFT;
 }
@@ -90,21 +90,21 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">Purchase invoices</h2>
-          <p className="text-sm text-white-muted">
+          <h2 className="text-base font-semibold text-ink sm:text-lg">Purchase invoices</h2>
+          <p className="text-sm text-fog">
             Open any bill to view, verify, and download as PDF or Excel
           </p>
         </div>
-        <Button variant="secondary" className="shrink-0 text-xs" onClick={load}>
+        <Button variant="secondary" className="w-full shrink-0 text-xs sm:w-auto" onClick={load}>
           <RefreshCw className="mr-1.5 inline h-3.5 w-3.5" />
           Refresh
         </Button>
       </div>
 
       <div className="relative">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-white-faint" />
+        <Search className="absolute left-3 top-3 h-4 w-4 text-silver" />
         <Input
-          className="pl-10"
+          className="py-2.5 pl-10 text-base sm:text-sm"
           placeholder="Search supplier, invoice no., or date…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -112,9 +112,9 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
       </div>
 
       {loading ? (
-        <p className="text-sm text-white-muted">Loading invoices…</p>
+        <p className="text-sm text-fog">Loading invoices…</p>
       ) : filtered.length === 0 ? (
-        <Card className="p-8 text-center text-white-muted">
+        <Card className="p-8 text-center text-fog">
           No purchase invoices yet. Post a manual entry or import Excel.
         </Card>
       ) : (
@@ -130,18 +130,19 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                 key={inv.id}
                 type="button"
                 onClick={() => openDetail(inv.id)}
-                className="flex w-full items-center gap-3 rounded-xl border border-charcoal-3 bg-charcoal px-4 py-3 text-left transition-colors hover:border-white/20 hover:bg-charcoal-2"
+                className="flex w-full flex-col gap-2 rounded-xl border border-ash bg-paper px-3 py-3 text-left transition-colors active:scale-[0.99] hover:border-smoke hover:bg-canvas sm:flex-row sm:items-center sm:gap-3 sm:px-4"
               >
-                <div className="shrink-0 rounded-lg bg-charcoal-3 p-2">
-                  {inv.source === "EXCEL" ? (
-                    <FileSpreadsheet className="h-5 w-5 text-white-muted" />
-                  ) : (
-                    <PenLine className="h-5 w-5 text-white-muted" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
+                <div className="flex shrink-0 items-center gap-2 sm:contents">
+                  <div className="shrink-0 rounded-lg bg-canvas p-2">
+                    {inv.source === "EXCEL" ? (
+                      <FileSpreadsheet className="h-5 w-5 text-fog" />
+                    ) : (
+                      <PenLine className="h-5 w-5 text-fog" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 sm:order-none">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-mono font-semibold text-white">
+                    <p className="font-mono text-sm font-semibold text-ink">
                       {inv.invoice_number}
                     </p>
                     <span
@@ -149,11 +150,11 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                     >
                       {inv.status.replace("_", " ")}
                     </span>
-                    <span className="text-[10px] uppercase text-white-faint">
+                    <span className="text-[10px] uppercase text-silver">
                       {inv.source === "EXCEL" ? "Excel" : "Manual"}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-xs text-white-muted">
+                  <p className="mt-0.5 text-xs text-fog">
                     {formatDate(inv.invoice_date)}
                     {sup ? ` · ${sup.name}` : ""}
                     {lineCounts.get(inv.id)
@@ -161,12 +162,13 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                       : ""}
                     {inv.invoice_type ? ` · ${inv.invoice_type}` : ""}
                   </p>
+                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-lg font-bold tabular-nums text-white">
+                <div className="flex items-center justify-between gap-3 sm:block sm:text-right sm:shrink-0">
+                  <p className="text-lg font-bold tabular-nums text-ink">
                     {formatInr(total)}
                   </p>
-                  <p className="text-xs text-white-faint">
+                  <p className="text-xs text-silver">
                     {inv.printed_grand_total && inv.total_amount !== inv.printed_grand_total
                       ? `Printed ${formatInr(inv.printed_grand_total)}`
                       : "Total"}
@@ -182,7 +184,7 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail?.invoice?.invoice_number ?? "Purchase invoice"}
-        className="max-h-[92vh] max-w-5xl overflow-y-auto"
+        className="max-h-[92dvh] max-w-5xl overflow-y-auto sm:max-h-[92vh] sm:rounded-xl"
       >
         {detail ? (
           <PurchaseInvoiceDocument
@@ -197,7 +199,7 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                   title="Printed vs calculated verification"
                 />
                 {detail.invoice.notes ? (
-                  <p className="text-sm text-white-muted">{detail.invoice.notes}</p>
+                  <p className="text-sm text-fog">{detail.invoice.notes}</p>
                 ) : null}
               </div>
             }

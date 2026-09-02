@@ -13,6 +13,7 @@ import { downloadDayCloseReportPdf } from "../../lib/exportDownload";
 import { isOnline } from "../../lib/network";
 import { KpiCard, Card } from "../ui/Card";
 import { Button } from "../ui/Button";
+import { PageHeader } from "../shared/PageHeader";
 
 export function Dashboard() {
   const [kpis, setKpis] = useState({
@@ -122,19 +123,16 @@ export function Dashboard() {
   }, []);
 
   return (
-    <div className="space-y-6 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-white">Owner dashboard</h1>
-          <p className="text-sm text-white-muted">
-            Live from Supabase · {kpis.productCount} parts in stock
-          </p>
-        </div>
-        <Button variant="secondary" className="text-xs" onClick={load}>
+    <div className="space-y-4 sm:space-y-6">
+      <PageHeader
+        title="Owner dashboard"
+        description={`Live from Supabase · ${kpis.productCount} parts in stock`}
+      >
+        <Button variant="secondary" className="w-full text-xs sm:w-auto" onClick={load}>
           <RefreshCw className="mr-1.5 inline h-3.5 w-3.5" />
           Refresh
         </Button>
-      </div>
+      </PageHeader>
 
       {syncError ? (
         <p className="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -143,42 +141,42 @@ export function Dashboard() {
       ) : null}
 
       {loading ? (
-        <p className="text-sm text-white-muted">Syncing live data…</p>
+        <p className="text-sm text-fog">Syncing live data…</p>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
         <KpiCard label="Stock cost value" value={formatInr(kpis.stockCost)} />
         <KpiCard label="Retail value" value={formatInr(kpis.retailValue)} />
         <KpiCard label="Today revenue" value={formatInr(kpis.todayRevenue)} />
         <KpiCard label="Today gross profit" value={formatInr(kpis.grossProfit)} />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
         <KpiCard label="Cash today" value={formatInr(kpis.todayCash)} />
         <KpiCard label="UPI today" value={formatInr(kpis.todayUpi)} />
         <KpiCard label="Credit today" value={formatInr(kpis.todayCredit)} />
       </div>
 
       <Card>
-        <h2 className="mb-3 font-semibold text-white">Low stock</h2>
+        <h2 className="mb-3 font-semibold text-ink">Low stock</h2>
         {lowStock.length ? (
           <ul className="space-y-2 text-sm">
             {lowStock.map((p) => (
-              <li key={p.id} className="flex justify-between text-white-muted">
+              <li key={p.id} className="flex justify-between text-fog">
                 <span>{p.name}</span>
                 <span className="text-warning">{formatQty(p.stock_quantity)} left</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-white-faint">All stocked OK</p>
+          <p className="text-sm text-silver">All stocked OK</p>
         )}
       </Card>
 
       <Card>
-        <h2 className="mb-3 font-semibold text-white">Dead stock (no sales yet)</h2>
+        <h2 className="mb-3 font-semibold text-ink">Dead stock (no sales yet)</h2>
         {deadStock.length ? (
-          <ul className="space-y-2 text-sm text-white-muted">
+          <ul className="space-y-2 text-sm text-fog">
             {deadStock.map((p) => (
               <li key={p.id}>
                 {p.name}{" "}
@@ -187,19 +185,59 @@ export function Dashboard() {
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-white-faint">None flagged</p>
+          <p className="text-sm text-silver">None flagged</p>
         )}
       </Card>
 
       <Card>
-        <h2 className="mb-3 font-semibold text-white">Saved end-of-day reports</h2>
-        <p className="mb-4 text-sm text-white-muted">
+        <h2 className="mb-3 font-semibold text-ink">Saved end-of-day reports</h2>
+        <p className="mb-4 text-sm text-fog">
           PDF summaries saved when the shift is closed each day.
         </p>
         {dayReports.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-white-muted">
+          <>
+            <div className="space-y-2 md:hidden">
+              {dayReports.map((row) => {
+                const r = row.report_json;
+                return (
+                  <div
+                    key={row.id}
+                    className="rounded-lg border border-ash bg-paper p-3 text-sm"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-medium text-ink">{row.business_date}</p>
+                      <p className="font-semibold tabular-nums text-ink">
+                        {formatInr(r?.total_sales)}
+                      </p>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-fog">
+                      <span>{r?.bill_count ?? "—"} bills</span>
+                      <span
+                        className={
+                          toNum(r?.cash_variance) !== 0 ? "text-warning" : ""
+                        }
+                      >
+                        Cash var.{" "}
+                        {r?.cash_variance != null
+                          ? formatInr(r.cash_variance)
+                          : "—"}
+                      </span>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      className="mt-3 w-full text-xs"
+                      onClick={() => downloadDayCloseReportPdf(r)}
+                    >
+                      <FileDown className="mr-1 inline h-3.5 w-3.5" />
+                      Download PDF
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[520px] text-left text-sm">
+              <thead className="text-fog">
                 <tr>
                   <th className="pb-2 pr-3">Date</th>
                   <th className="pb-2 pr-3 text-right">Sales</th>
@@ -212,7 +250,7 @@ export function Dashboard() {
                 {dayReports.map((row) => {
                   const r = row.report_json;
                   return (
-                    <tr key={row.id} className="border-t border-charcoal-3">
+                    <tr key={row.id} className="border-t border-ash">
                       <td className="py-2 pr-3">{row.business_date}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">
                         {formatInr(r?.total_sales)}
@@ -242,19 +280,46 @@ export function Dashboard() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         ) : (
-          <p className="text-sm text-white-faint">
+          <p className="text-sm text-silver">
             No saved reports yet. Close the shift to generate the first PDF.
           </p>
         )}
       </Card>
 
       <Card>
-        <h2 className="mb-3 font-semibold text-white">Register audit</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-white-muted">
+        <h2 className="mb-3 font-semibold text-ink">Register audit</h2>
+        <div className="space-y-2 md:hidden">
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              className="rounded-lg border border-ash bg-paper p-3 text-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium text-ink">{s.business_date}</p>
+                <span className="text-xs text-fog">{s.status}</span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-fog">
+                <span>Open {formatInr(s.opening_cash)}</span>
+                <span
+                  className={`text-right tabular-nums ${
+                    toNum(s.cash_variance) !== 0 ? "text-warning" : ""
+                  }`}
+                >
+                  Cash {s.cash_variance != null ? formatInr(s.cash_variance) : "—"}
+                </span>
+                <span className="col-span-2 text-right tabular-nums">
+                  UPI {s.upi_variance != null ? formatInr(s.upi_variance) : "—"}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[520px] text-left text-sm">
+            <thead className="text-fog">
               <tr>
                 <th className="pb-2 pr-3">Date</th>
                 <th className="pb-2 pr-3">Status</th>
@@ -265,7 +330,7 @@ export function Dashboard() {
             </thead>
             <tbody>
               {sessions.map((s) => (
-                <tr key={s.id} className="border-t border-charcoal-3">
+                <tr key={s.id} className="border-t border-ash">
                   <td className="py-2 pr-3">{s.business_date}</td>
                   <td className="py-2 pr-3">{s.status}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">

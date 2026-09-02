@@ -2,7 +2,7 @@ import { formatInr } from "../../lib/format";
 import { compareInvoiceCalculation } from "../../lib/purchaseCalculations";
 
 function VarianceCell({ printed, computed, variance, tolerance }) {
-  if (!printed && printed !== 0) return <span className="text-white-faint">—</span>;
+  if (!printed && printed !== 0) return <span className="text-silver">—</span>;
   const abs = Math.abs(variance);
   const match = abs <= tolerance;
   return (
@@ -53,9 +53,9 @@ export function PurchaseTotalsCheck({ data, title = "Printed vs calculated" }) {
   ];
 
   return (
-    <div className="rounded-lg border border-charcoal-3 p-3 text-sm space-y-2">
+    <div className="rounded-lg border border-ash p-3 text-sm space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="font-medium text-white">{title}</p>
+        <p className="font-medium text-ink">{title}</p>
         {check.hasPrintedTotals ? (
           <span
             className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
@@ -67,18 +67,18 @@ export function PurchaseTotalsCheck({ data, title = "Printed vs calculated" }) {
             {check.ok ? "Match" : "Variance"}
           </span>
         ) : (
-          <span className="text-[10px] uppercase text-white-faint">
+          <span className="text-[10px] uppercase text-silver">
             Expected (no printed totals entered)
           </span>
         )}
-        <span className="text-[10px] text-white-faint">
+        <span className="text-[10px] text-silver">
           Tolerance ±{formatInr(check.tolerance)}
         </span>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[320px] text-left text-xs">
-          <thead className="text-white-muted">
+          <thead className="text-fog">
             <tr>
               <th className="py-1 pr-2" />
               <th className="py-1 pr-2 text-right">Printed / entered</th>
@@ -88,12 +88,12 @@ export function PurchaseTotalsCheck({ data, title = "Printed vs calculated" }) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.label} className="border-t border-charcoal-3/60">
-                <td className="py-1.5 pr-2 text-white-muted">{row.label}</td>
-                <td className="py-1.5 pr-2 text-right tabular-nums text-white">
+              <tr key={row.label} className="border-t border-ash/60">
+                <td className="py-1.5 pr-2 text-fog">{row.label}</td>
+                <td className="py-1.5 pr-2 text-right tabular-nums text-ink">
                   {row.printed > 0 ? formatInr(row.printed) : "—"}
                 </td>
-                <td className="py-1.5 pr-2 text-right tabular-nums text-white">
+                <td className="py-1.5 pr-2 text-right tabular-nums text-ink">
                   {formatInr(row.computed)}
                 </td>
                 <td className="py-1.5 text-right tabular-nums">
@@ -115,10 +115,10 @@ export function PurchaseTotalsCheck({ data, title = "Printed vs calculated" }) {
           <p className="font-medium">
             {check.mismatchLines.length} line(s) differ from expected formula
           </p>
-          <ul className="mt-1 space-y-0.5 text-white-muted">
+          <ul className="mt-1 space-y-0.5 text-fog">
             {check.mismatchLines.slice(0, 5).map((l) => (
               <li key={l.lineNo}>
-                <span className="font-mono text-white">{l.code}</span>
+                <span className="font-mono text-ink">{l.code}</span>
                 — taxable diff {formatInr(l.variances.taxable)}, total diff{" "}
                 {formatInr(l.variances.lineTotal)}
               </li>
@@ -131,7 +131,7 @@ export function PurchaseTotalsCheck({ data, title = "Printed vs calculated" }) {
       ) : null}
 
       {!check.ok && check.hasPrintedTotals ? (
-        <p className="text-xs text-white-muted">
+        <p className="text-xs text-fog">
           Small differences are normal from per-line rounding on supplier invoices.
           Lines sum taxable {formatInr(check.summedFromLines.taxable)} vs formula{" "}
           {formatInr(check.computed.taxable)}.

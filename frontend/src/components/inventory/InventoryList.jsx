@@ -14,6 +14,7 @@ import { Input, Label } from "../ui/Input";
 import { Card } from "../ui/Card";
 import { buildSearchIndex, searchProducts } from "../../hooks/useSync";
 import { isOnline } from "../../lib/network";
+import { PageHeader } from "../shared/PageHeader";
 
 const UOM_OPTIONS = ["PCS", "SET", "KG", "LTR", "BOX", "PAIR"];
 
@@ -164,31 +165,26 @@ export function InventoryList() {
   }
 
   return (
-    <div className="space-y-6 p-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-white">Inventory</h1>
-          <p className="text-sm text-white-muted">
-            {products.length} parts · search by code, name, brand, or vehicle
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <DownloadActions
-            excelLabel="Export Excel"
-            pdfLabel="Export PDF"
-            onExcel={() => downloadInventoryExcel(filtered)}
-            onPdf={() => downloadInventoryPdf(filtered)}
-          />
-          <Button variant="secondary" className="text-xs" onClick={loadProducts}>
-            Refresh
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-4 sm:space-y-6">
+      <PageHeader
+        title="Inventory"
+        description={`${products.length} parts · search by code, name, brand, or vehicle`}
+      >
+        <DownloadActions
+          excelLabel="Excel"
+          pdfLabel="PDF"
+          onExcel={() => downloadInventoryExcel(filtered)}
+          onPdf={() => downloadInventoryPdf(filtered)}
+        />
+        <Button variant="secondary" className="w-full text-xs sm:w-auto" onClick={loadProducts}>
+          Refresh
+        </Button>
+      </PageHeader>
 
       <div className="relative">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-white-faint" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-silver" />
         <Input
-          className="pl-10"
+          className="py-2.5 pl-10 text-base sm:text-sm"
           placeholder="Search parts…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -196,7 +192,7 @@ export function InventoryList() {
       </div>
 
       <Card>
-        <h2 className="mb-4 font-medium text-white">
+        <h2 className="mb-4 font-medium text-ink">
           {editing ? `Edit — ${editing.part_number}` : "Add new part"}
         </h2>
         {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
@@ -237,7 +233,7 @@ export function InventoryList() {
           <div>
             <Label>UOM</Label>
             <select
-              className="w-full rounded-lg border border-charcoal-3 bg-charcoal px-3 py-2.5 text-sm text-white focus:border-white/40 focus:outline-none"
+              className="w-full rounded-lg border border-ash bg-paper px-3 py-2.5 text-sm text-ink focus:border-electric focus:outline-none"
               value={form.uom}
               onChange={(e) => setForm({ ...form, uom: e.target.value })}
             >
@@ -312,12 +308,12 @@ export function InventoryList() {
               placeholder="Activa, Splendor, Shine"
             />
           </div>
-          <div className="sm:col-span-2 lg:col-span-3 flex flex-wrap gap-2">
-            <Button type="submit">
+          <div className="sm:col-span-2 lg:col-span-3 flex flex-col gap-2 sm:flex-row">
+            <Button type="submit" className="w-full sm:w-auto">
               {editing ? "Update part" : "Add part"}
             </Button>
             {editing ? (
-              <Button type="button" variant="secondary" onClick={cancelEdit}>
+              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={cancelEdit}>
                 Cancel
               </Button>
             ) : null}
@@ -325,9 +321,54 @@ export function InventoryList() {
         </form>
       </Card>
 
-      <div className="overflow-x-auto rounded-xl border border-charcoal-3">
+      {/* Mobile card list */}
+      <div className="space-y-2 lg:hidden">
+        {loading ? (
+          <p className="py-8 text-center text-sm text-fog">Loading…</p>
+        ) : filtered.length === 0 ? (
+          <Card className="text-center text-sm text-silver">
+            {query ? "No parts match your search." : "No parts yet. Add one or import Excel."}
+          </Card>
+        ) : (
+          filtered.map((p) => (
+            <div
+              key={p.id}
+              className={`rounded-lg border border-ash bg-canvas p-3 ${
+                editing?.id === p.id ? "ring-2 ring-electric/20" : ""
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs text-fog">{p.part_number}</p>
+                  <p className="mt-0.5 text-sm font-medium text-ink">{p.name}</p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-fog hover:bg-paper hover:text-ink"
+                  onClick={() => startEdit(p)}
+                >
+                  Edit
+                </button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-fog">
+                <span>Stock {formatQty(p.stock_quantity)}</span>
+                <span className="text-right">Sell {formatInr(p.selling_price)}</span>
+                <span>Cost {formatInr(p.purchase_price)}</span>
+                <span className="text-right">{p.brand || "—"}</span>
+              </div>
+            </div>
+          ))
+        )}
+        {!loading && filtered.length > 0 ? (
+          <p className="text-xs text-silver">
+            Showing {filtered.length} of {products.length} parts
+          </p>
+        ) : null}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl border border-ash lg:block">
         <table className="w-full min-w-[1100px] text-left text-sm">
-          <thead className="bg-charcoal-2 text-xs text-white-muted">
+          <thead className="bg-canvas text-xs text-fog">
             <tr>
               <th className="px-3 py-2">Code</th>
               <th className="px-3 py-2">Name</th>
@@ -346,13 +387,13 @@ export function InventoryList() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center text-white-muted">
+                <td colSpan={12} className="px-3 py-8 text-center text-fog">
                   Loading…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center text-white-faint">
+                <td colSpan={12} className="px-3 py-8 text-center text-silver">
                   {query ? "No parts match your search." : "No parts yet. Add one or import Excel."}
                 </td>
               </tr>
@@ -360,27 +401,27 @@ export function InventoryList() {
               filtered.map((p) => (
                 <tr
                   key={p.id}
-                  className={`border-t border-charcoal-3 ${
-                    editing?.id === p.id ? "bg-charcoal-2" : ""
+                  className={`border-t border-ash ${
+                    editing?.id === p.id ? "bg-canvas" : ""
                   }`}
                 >
                   <td className="px-3 py-2 font-mono text-xs">{p.part_number}</td>
                   <td className="px-3 py-2 max-w-[200px] truncate" title={p.name}>
                     {p.name}
                   </td>
-                  <td className="px-3 py-2 text-white-muted">{p.category || "—"}</td>
-                  <td className="px-3 py-2 text-white-muted">{p.brand || "—"}</td>
-                  <td className="px-3 py-2 text-white-muted">{p.uom || "PCS"}</td>
+                  <td className="px-3 py-2 text-fog">{p.category || "—"}</td>
+                  <td className="px-3 py-2 text-fog">{p.brand || "—"}</td>
+                  <td className="px-3 py-2 text-fog">{p.uom || "PCS"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatQty(p.stock_quantity)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-white-muted">
+                  <td className="px-3 py-2 text-right tabular-nums text-fog">
                     {formatQty(p.min_stock_alert)}
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">
                     {p.rack_location || "—"}
                   </td>
-                  <td className="px-3 py-2 max-w-[140px] truncate text-xs text-white-muted">
+                  <td className="px-3 py-2 max-w-[140px] truncate text-xs text-fog">
                     {(p.vehicle_compatibility || []).join(", ") || "—"}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
@@ -392,7 +433,7 @@ export function InventoryList() {
                   <td className="px-3 py-2">
                     <button
                       type="button"
-                      className="text-xs text-white-muted hover:text-white"
+                      className="text-xs text-fog hover:text-ink"
                       onClick={() => startEdit(p)}
                     >
                       Edit
@@ -404,7 +445,7 @@ export function InventoryList() {
           </tbody>
         </table>
         {!loading && filtered.length > 0 ? (
-          <p className="border-t border-charcoal-3 px-3 py-2 text-xs text-white-faint">
+          <p className="border-t border-ash px-3 py-2 text-xs text-silver">
             Showing {filtered.length} of {products.length} parts
           </p>
         ) : null}

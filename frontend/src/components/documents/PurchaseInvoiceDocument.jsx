@@ -45,19 +45,19 @@ export function PurchaseInvoiceDocument({
       <DownloadActions onExcel={handleExcel} onPdf={handlePdf} />
 
       <div
-        className="overflow-hidden rounded-xl border border-charcoal-3 bg-white text-charcoal shadow-xl"
+        className="overflow-hidden rounded-xl border border-ash bg-canvas text-ink shadow-xl"
         id="purchase-invoice-document"
       >
-        <div className="border-b border-charcoal/10 bg-charcoal/[0.03] px-5 py-4 sm:px-6">
+        <div className="border-b border-ash bg-paper/[0.03] px-5 py-4 sm:px-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-charcoal/50">
+              <p className="text-xs font-semibold uppercase tracking-widest text-silver">
                 Purchase invoice
               </p>
               <h3 className="mt-1 text-2xl font-bold tracking-tight">
                 {invoice.invoice_number}
               </h3>
-              <p className="mt-1 text-sm text-charcoal/70">
+              <p className="mt-1 text-sm text-fog">
                 {formatDate(invoice.invoice_date)}
                 {invoice.invoice_type ? ` · ${invoice.invoice_type}` : ""}
               </p>
@@ -65,52 +65,52 @@ export function PurchaseInvoiceDocument({
             <div className="text-right text-sm">
               <p className="font-semibold">{shopName}</p>
               {shop?.gstin ? (
-                <p className="text-charcoal/70">GSTIN {shop.gstin}</p>
+                <p className="text-fog">GSTIN {shop.gstin}</p>
               ) : null}
               {shop?.phone ? (
-                <p className="text-charcoal/70">{shop.phone}</p>
+                <p className="text-fog">{shop.phone}</p>
               ) : null}
             </div>
           </div>
         </div>
 
-        <div className="grid gap-4 border-b border-charcoal/10 px-5 py-4 sm:grid-cols-2 sm:px-6">
-          <div className="rounded-lg border border-charcoal/10 bg-charcoal/[0.02] p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-charcoal/50">
+        <div className="grid gap-4 border-b border-ash px-5 py-4 sm:grid-cols-2 sm:px-6">
+          <div className="rounded-lg border border-ash bg-paper/[0.02] p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-silver">
               Buyer (you)
             </p>
             <p className="mt-1 font-semibold">{shopName}</p>
             {shop?.address ? (
-              <p className="mt-1 text-xs text-charcoal/70">{shop.address}</p>
+              <p className="mt-1 text-xs text-fog">{shop.address}</p>
             ) : null}
             {shop?.gstin ? (
-              <p className="mt-1 text-xs font-mono text-charcoal/70">
+              <p className="mt-1 text-xs font-mono text-fog">
                 GSTIN {shop.gstin}
               </p>
             ) : null}
           </div>
-          <div className="rounded-lg border border-charcoal/10 bg-charcoal/[0.02] p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-charcoal/50">
+          <div className="rounded-lg border border-ash bg-paper/[0.02] p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-silver">
               Supplier
             </p>
             <p className="mt-1 font-semibold">{supplier?.name ?? "—"}</p>
             {supplier?.address ? (
-              <p className="mt-1 text-xs text-charcoal/70">{supplier.address}</p>
+              <p className="mt-1 text-xs text-fog">{supplier.address}</p>
             ) : null}
             {supplier?.gstin ? (
-              <p className="mt-1 text-xs font-mono text-charcoal/70">
+              <p className="mt-1 text-xs font-mono text-fog">
                 GSTIN {supplier.gstin}
               </p>
             ) : null}
             {supplier?.phone ? (
-              <p className="text-xs text-charcoal/70">{supplier.phone}</p>
+              <p className="text-xs text-fog">{supplier.phone}</p>
             ) : null}
           </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-charcoal/[0.06] text-[11px] font-semibold uppercase tracking-wide text-charcoal/60">
+            <thead className="bg-paper/[0.06] text-[11px] font-semibold uppercase tracking-wide text-silver">
               <tr>
                 <th className="px-3 py-2.5">#</th>
                 <th className="px-3 py-2.5">Part no.</th>
@@ -129,27 +129,27 @@ export function PurchaseInvoiceDocument({
               {lines.map((l) => (
                 <tr
                   key={l.id ?? `${l.line_no}-${l.part_number}`}
-                  className="border-t border-charcoal/8"
+                  className="border-t border-ash"
                 >
-                  <td className="px-3 py-2 text-charcoal/50">{l.line_no}</td>
+                  <td className="px-3 py-2 text-silver">{l.line_no}</td>
                   <td className="px-3 py-2 font-mono text-xs font-medium">
                     {l.part_number}
                   </td>
                   <td className="px-3 py-2 max-w-[200px]">
                     <div className="truncate">{l.description}</div>
                     {l.hsn ? (
-                      <div className="text-[10px] text-charcoal/50">
+                      <div className="text-[10px] text-silver">
                         HSN {l.hsn}
                       </div>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2 text-xs text-charcoal/70">
+                  <td className="px-3 py-2 text-xs text-fog">
                     {l.brand || "—"}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatQty(l.quantity)}
                   </td>
-                  <td className="px-3 py-2 text-right text-xs text-charcoal/70">
+                  <td className="px-3 py-2 text-right text-xs text-fog">
                     {l.uom || "PCS"}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
@@ -173,12 +173,12 @@ export function PurchaseInvoiceDocument({
           </table>
         </div>
 
-        <div className="grid gap-4 border-t border-charcoal/10 px-5 py-4 sm:grid-cols-2 sm:px-6">
-          <div className="text-sm text-charcoal/70">
+        <div className="grid gap-4 border-t border-ash px-5 py-4 sm:grid-cols-2 sm:px-6">
+          <div className="text-sm text-fog">
             <p>
-              <span className="font-medium text-charcoal">{lines.length}</span>{" "}
+              <span className="font-medium text-ink">{lines.length}</span>{" "}
               line items ·{" "}
-              <span className="font-medium text-charcoal">{totalQty}</span> units
+              <span className="font-medium text-ink">{totalQty}</span> units
             </p>
             <p className="mt-1 text-xs">
               Source: {invoice.source === "EXCEL" ? "Excel import" : "Manual entry"}
@@ -188,7 +188,7 @@ export function PurchaseInvoiceDocument({
           <div className="space-y-1 text-sm">
             {invoice.printed_subtotal != null ? (
               <div className="flex justify-between">
-                <span className="text-charcoal/70">Printed subtotal</span>
+                <span className="text-fog">Printed subtotal</span>
                 <span className="tabular-nums">
                   {formatInr(invoice.printed_subtotal)}
                 </span>
@@ -196,7 +196,7 @@ export function PurchaseInvoiceDocument({
             ) : null}
             {invoice.printed_discount != null ? (
               <div className="flex justify-between">
-                <span className="text-charcoal/70">Printed discount</span>
+                <span className="text-fog">Printed discount</span>
                 <span className="tabular-nums">
                   {formatInr(invoice.printed_discount)}
                 </span>
@@ -204,7 +204,7 @@ export function PurchaseInvoiceDocument({
             ) : null}
             {invoice.printed_taxable != null ? (
               <div className="flex justify-between">
-                <span className="text-charcoal/70">Printed taxable</span>
+                <span className="text-fog">Printed taxable</span>
                 <span className="tabular-nums">
                   {formatInr(invoice.printed_taxable)}
                 </span>
@@ -212,7 +212,7 @@ export function PurchaseInvoiceDocument({
             ) : null}
             {invoice.printed_cgst != null ? (
               <div className="flex justify-between">
-                <span className="text-charcoal/70">CGST</span>
+                <span className="text-fog">CGST</span>
                 <span className="tabular-nums">
                   {formatInr(invoice.printed_cgst)}
                 </span>
@@ -220,7 +220,7 @@ export function PurchaseInvoiceDocument({
             ) : null}
             {invoice.printed_sgst != null ? (
               <div className="flex justify-between">
-                <span className="text-charcoal/70">SGST</span>
+                <span className="text-fog">SGST</span>
                 <span className="tabular-nums">
                   {formatInr(invoice.printed_sgst)}
                 </span>
@@ -234,7 +234,7 @@ export function PurchaseInvoiceDocument({
                 </span>
               </div>
             ) : null}
-            <div className="flex justify-between border-t border-charcoal/10 pt-2 text-base font-bold">
+            <div className="flex justify-between border-t border-ash pt-2 text-base font-bold">
               <span>Computed total</span>
               <span className="tabular-nums">
                 {formatInr(invoice.total_amount)}

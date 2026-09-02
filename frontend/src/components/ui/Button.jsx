@@ -9,19 +9,19 @@ export function Button({
 }) {
   const variants = {
     primary:
-      "bg-white text-charcoal hover:bg-white/90 disabled:opacity-50 font-semibold",
+      "bg-action text-canvas hover:bg-ink-strong disabled:opacity-50 font-medium shadow-subtle",
     secondary:
-      "border border-white text-white bg-transparent hover:bg-charcoal-3 disabled:opacity-50",
+      "border border-ash text-ink bg-canvas hover:bg-paper disabled:opacity-50 font-medium",
     danger:
-      "border border-danger text-danger bg-transparent hover:bg-danger/10 disabled:opacity-50",
-    ghost: "text-white-muted hover:text-white hover:bg-charcoal-3",
+      "border border-danger/40 text-danger bg-canvas hover:bg-danger/5 disabled:opacity-50 font-medium",
+    ghost: "text-fog hover:text-ink hover:bg-paper font-medium",
   };
   return (
     <button
       type="button"
       disabled={disabled}
       className={cn(
-        "rounded-lg px-4 py-2.5 text-sm transition-colors",
+        "rounded-lg px-4 py-2 text-sm transition-colors",
         variants[variant],
         className,
       )}

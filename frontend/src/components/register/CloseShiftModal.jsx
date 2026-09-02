@@ -55,13 +55,13 @@ export function CloseShiftModal({ open, session, userId, onClose, onDone }) {
 
   return (
     <Modal open={open} onClose={onClose} title="Close shift & tally">
-      <p className="mb-3 text-sm text-white-muted">
+      <p className="mb-3 text-sm text-fog">
         After you enter counted cash and UPI, a PDF end-of-day summary will download
         automatically and be saved for this business date.
       </p>
-      <div className="mb-4 space-y-2 text-sm text-white-muted">
-        <p>Expected cash: <span className="text-white">{formatInr(expected.cash)}</span></p>
-        <p>Expected UPI: <span className="text-white">{formatInr(expected.upi)}</span></p>
+      <div className="mb-4 space-y-2 text-sm text-fog">
+        <p>Expected cash: <span className="text-ink">{formatInr(expected.cash)}</span></p>
+        <p>Expected UPI: <span className="text-ink">{formatInr(expected.upi)}</span></p>
       </div>
       {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
       <form onSubmit={submit} className="space-y-4">

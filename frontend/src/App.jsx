@@ -23,6 +23,7 @@ import { localDb } from "./db/localDb";
 function ProtectedApp({ profile, isOwner, signOut }) {
   const [session, setSession] = useState(null);
   const [needOpen, setNeedOpen] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [shopName, setShopName] = useState("");
@@ -30,9 +31,13 @@ function ProtectedApp({ profile, isOwner, signOut }) {
   const { online } = useSync(Boolean(profile));
 
   const refreshSession = useCallback(async () => {
-    const s = await getTodayOpenSession();
-    setSession(s);
-    setNeedOpen(!s);
+    try {
+      const s = await getTodayOpenSession();
+      setSession(s);
+      setNeedOpen(!s);
+    } finally {
+      setSessionReady(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -45,6 +50,14 @@ function ProtectedApp({ profile, isOwner, signOut }) {
     }, 30000);
     return () => clearInterval(t);
   }, [refreshSession]);
+
+  if (!sessionReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-fog">
+        Loading…
+      </div>
+    );
+  }
 
   if (needOpen && !session) {
     return (
@@ -74,8 +87,12 @@ function ProtectedApp({ profile, isOwner, signOut }) {
             element={
               session?.status === "OPEN" ? (
                 <POSBilling session={session} profile={profile} isOwner={isOwner} />
-              ) : (
+              ) : needOpen ? (
                 <Navigate to="/" replace />
+              ) : (
+                <div className="p-6 text-center text-fog">
+                  Shift is closed for today. Open a new shift to bill.
+                </div>
               )
             }
           />
@@ -127,7 +144,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-white-muted">
+      <div className="flex min-h-screen items-center justify-center text-fog">
         Loading…
       </div>
     );
@@ -136,6 +153,14 @@ export default function App() {
   const activeProfile = profile || demoProfile;
   if (!user && !demoProfile) {
     return <LoginForm onDemo={() => setDemoProfile(DEMO_PROFILE)} />;
+  }
+
+  if (!activeProfile) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-fog">
+        Signing in…
+      </div>
+    );
   }
 
   return (

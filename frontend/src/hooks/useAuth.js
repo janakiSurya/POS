@@ -56,12 +56,18 @@ export function useAuth() {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
         const sessionUser = session?.user ?? null;
-        setUser(sessionUser);
         if (sessionUser) {
-          setProfile(await resolveProfile(sessionUser));
+          const p = await resolveProfile(sessionUser);
+          setUser(sessionUser);
+          setProfile(p);
+        } else {
+          setUser(null);
+          setProfile(null);
         }
       } catch (err) {
         console.error("Auth init failed", err);
+        setUser(null);
+        setProfile(null);
       } finally {
         setLoading(false);
       }
@@ -73,10 +79,12 @@ export function useAuth() {
       data: { subscription: sub },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const sessionUser = session?.user ?? null;
-      setUser(sessionUser);
       if (sessionUser) {
-        setProfile(await resolveProfile(sessionUser));
+        const p = await resolveProfile(sessionUser);
+        setUser(sessionUser);
+        setProfile(p);
       } else {
+        setUser(null);
         setProfile(null);
       }
     });

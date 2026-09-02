@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "../ui/Button";
 import { Input, Label } from "../ui/Input";
+import { Card } from "../ui/Card";
 import { supabase, supabaseConfigured } from "../../lib/supabaseClient";
 
 export function LoginForm({ onDemo }) {
@@ -31,54 +32,59 @@ export function LoginForm({ onDemo }) {
   }
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center px-4 py-12">
-      <img src="/logo.png" alt="Logo" className="mb-6 h-28 w-28 object-contain" />
-      <h1 className="text-center text-lg font-semibold text-white">
-        Sri Sri Sathya Sai Automobiles
-      </h1>
-      <p className="mt-1 text-sm text-white-muted">Bike Parts & Service — POS</p>
+    <div className="flex min-h-full flex-col items-center justify-center bg-paper px-4 py-12">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <img src="/logo.png" alt="Logo" className="mx-auto mb-4 h-20 w-20 object-contain" />
+          <h1 className="text-xl font-semibold tracking-tight text-ink">
+            Sri Sri Sathya Sai Automobiles
+          </h1>
+          <p className="mt-1 text-sm text-fog">Bike Parts & Service — POS</p>
+        </div>
 
-      <form onSubmit={submit} className="mt-8 w-full max-w-sm space-y-4">
-        {error ? (
-          <p className="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
-        {!supabaseConfigured ? (
-          <p className="text-sm text-warning">
-            Supabase not configured. Use demo mode or add VITE_SUPABASE_URL and
-            VITE_SUPABASE_ANON_KEY to .env
-          </p>
-        ) : null}
-        <div>
-          <Label>Email</Label>
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
-        </div>
-        <div>
-          <Label>Password</Label>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
-        </div>
-        <Button type="submit" disabled={pending} className="w-full">
-          {pending ? "Signing in…" : "Sign in"}
-        </Button>
-        {!supabaseConfigured ? (
-          <Button type="button" variant="secondary" className="w-full" onClick={onDemo}>
-            Continue in demo mode
-          </Button>
-        ) : null}
-      </form>
+        <Card className="p-6">
+          <form onSubmit={submit} className="space-y-4">
+            {error ? (
+              <p className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">
+                {error}
+              </p>
+            ) : null}
+            {!supabaseConfigured ? (
+              <p className="rounded-lg border border-tangerine/30 bg-tangerine/5 px-3 py-2 text-sm text-tangerine">
+                Supabase not configured. Use demo mode or add env keys.
+              </p>
+            ) : null}
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
+            <div>
+              <Label>Password</Label>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            <Button type="submit" disabled={pending} className="w-full">
+              {pending ? "Signing in…" : "Sign in"}
+            </Button>
+            {!supabaseConfigured ? (
+              <Button type="button" variant="secondary" className="w-full" onClick={onDemo}>
+                Continue in demo mode
+              </Button>
+            ) : null}
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }

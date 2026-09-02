@@ -11,24 +11,27 @@ import {
 } from "recharts";
 import { formatInr, toNum } from "../../lib/format";
 
+const CHART_GRID = "#e5e5e5";
+const CHART_TICK = "#737373";
+
 const CHART_COLORS = {
-  current: "#22c55e",
-  previous: "#6b6b70",
-  cash: "#3b82f6",
-  upi: "#a855f7",
-  credit: "#f59e0b",
-  expense: "#f59e0b",
-  net: "#22c55e",
+  current: "#16a34a",
+  previous: "#a3a3a3",
+  cash: "#2563eb",
+  upi: "#7c3aed",
+  credit: "#ea580c",
+  expense: "#ea580c",
+  net: "#16a34a",
 };
 
 function ChartTooltip({ active, payload, label, valueFormatter }) {
   if (!active || !payload?.length) return null;
   const fmt = valueFormatter || ((v) => formatInr(v));
   return (
-    <div className="rounded-lg border border-charcoal-3 bg-charcoal-2 px-3 py-2 text-sm shadow-lg">
-      <p className="font-medium text-white">{label}</p>
+    <div className="rounded-lg border border-ash bg-canvas px-3 py-2 text-sm shadow-lg">
+      <p className="font-medium text-ink">{label}</p>
       {payload.map((entry) => (
-        <p key={entry.name} className="text-white-muted tabular-nums">
+        <p key={entry.name} className="text-fog tabular-nums">
           <span style={{ color: entry.color }}>{entry.name}: </span>
           {fmt(entry.value, entry.name)}
         </p>
@@ -47,21 +50,21 @@ function formatShortInr(value) {
 export function DailyBarChart({ data, dataKey, label, color = CHART_COLORS.current }) {
   if (!data.length) {
     return (
-      <p className="py-12 text-center text-sm text-white-faint">No data for this range</p>
+      <p className="py-12 text-center text-sm text-silver">No data for this range</p>
     );
   }
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={window.innerWidth < 640 ? 180 : 220}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#3a3a3e" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
         <XAxis
           dataKey="label"
-          tick={{ fill: "#a1a1a6", fontSize: 11 }}
-          axisLine={{ stroke: "#3a3a3e" }}
+          tick={{ fill: CHART_TICK, fontSize: 11 }}
+          axisLine={{ stroke: CHART_GRID }}
           tickLine={false}
         />
         <YAxis
-          tick={{ fill: "#a1a1a6", fontSize: 11 }}
+          tick={{ fill: CHART_TICK, fontSize: 11 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={formatShortInr}
@@ -71,7 +74,7 @@ export function DailyBarChart({ data, dataKey, label, color = CHART_COLORS.curre
           content={
             <ChartTooltip valueFormatter={(v) => formatInr(v)} />
           }
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={{ fill: "rgba(0,0,0,0.04)" }}
         />
         <Bar dataKey={dataKey} name={label} fill={color} radius={[6, 6, 0, 0]} maxBarSize={48} />
       </BarChart>
@@ -89,7 +92,7 @@ export function PaymentMixChart({ cash, upi, credit }) {
 
   if (!total || !data.length) {
     return (
-      <p className="py-8 text-center text-sm text-white-faint">No payments in range</p>
+      <p className="py-8 text-center text-sm text-silver">No payments in range</p>
     );
   }
 
@@ -102,7 +105,7 @@ export function PaymentMixChart({ cash, upi, credit }) {
             type="category"
             dataKey="name"
             width={56}
-            tick={{ fill: "#a1a1a6", fontSize: 12 }}
+            tick={{ fill: CHART_TICK, fontSize: 12 }}
             axisLine={false}
             tickLine={false}
           />
@@ -112,7 +115,7 @@ export function PaymentMixChart({ cash, upi, credit }) {
                 valueFormatter={(v) => `${formatInr(v)} (${Math.round((v / total) * 100)}%)`}
               />
             }
-            cursor={{ fill: "rgba(255,255,255,0.04)" }}
+            cursor={{ fill: "rgba(0,0,0,0.04)" }}
           />
           <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={28}>
             {data.map((entry) => (
@@ -128,11 +131,11 @@ export function PaymentMixChart({ cash, upi, credit }) {
               className="h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: d.color }}
             />
-            <span className="text-white-muted">{d.name}</span>
-            <span className="font-medium tabular-nums text-white">
+            <span className="text-fog">{d.name}</span>
+            <span className="font-medium tabular-nums text-ink">
               {formatInr(d.value)}
             </span>
-            <span className="text-white-faint">
+            <span className="text-silver">
               ({Math.round((d.value / total) * 100)}%)
             </span>
           </div>
@@ -174,16 +177,16 @@ export function PeriodCompareChart({
       ? "text-success"
       : amountChange < 0
         ? "text-danger"
-        : "text-white-muted";
+        : "text-fog";
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <p className="text-2xl font-bold tabular-nums text-white">
+          <p className="text-2xl font-bold tabular-nums text-ink">
             {formatInr(currentAmount)}
           </p>
-          <p className="text-xs text-white-muted">
+          <p className="text-xs text-fog">
             {currentCount} bills · prev {formatInr(previousAmount)}
           </p>
         </div>
@@ -194,16 +197,16 @@ export function PeriodCompareChart({
       </div>
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#3a3a3e" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
           <XAxis
             dataKey="period"
-            tick={{ fill: "#a1a1a6", fontSize: 11 }}
+            tick={{ fill: CHART_TICK, fontSize: 11 }}
             axisLine={{ stroke: "#3a3a3e" }}
             tickLine={false}
           />
           <YAxis
             yAxisId="amount"
-            tick={{ fill: "#a1a1a6", fontSize: 11 }}
+            tick={{ fill: CHART_TICK, fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             tickFormatter={formatShortInr}
@@ -212,7 +215,7 @@ export function PeriodCompareChart({
           <YAxis
             yAxisId="bills"
             orientation="right"
-            tick={{ fill: "#a1a1a6", fontSize: 11 }}
+            tick={{ fill: CHART_TICK, fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             width={32}
@@ -225,10 +228,10 @@ export function PeriodCompareChart({
                 }
               />
             }
-            cursor={{ fill: "rgba(255,255,255,0.04)" }}
+            cursor={{ fill: "rgba(0,0,0,0.04)" }}
           />
           <Legend
-            wrapperStyle={{ fontSize: 11, color: "#a1a1a6" }}
+            wrapperStyle={{ fontSize: 11, color: CHART_TICK }}
             iconType="circle"
             iconSize={8}
           />
@@ -277,13 +280,13 @@ export function ExpenseCompareChart({
           <p className="text-2xl font-bold tabular-nums text-warning">
             {formatInr(currentTotal)}
           </p>
-          <p className="text-xs text-white-muted">
+          <p className="text-xs text-fog">
             {currentCount} entries · prev {formatInr(previousTotal)}
           </p>
         </div>
         <p
           className={`text-sm font-semibold tabular-nums ${
-            up ? "text-danger" : totalChange < 0 ? "text-success" : "text-white-muted"
+            up ? "text-danger" : totalChange < 0 ? "text-success" : "text-fog"
           }`}
         >
           {totalChange > 0 ? "+" : ""}
@@ -292,15 +295,15 @@ export function ExpenseCompareChart({
       </div>
       <ResponsiveContainer width="100%" height={180}>
         <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#3a3a3e" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
           <XAxis
             dataKey="period"
-            tick={{ fill: "#a1a1a6", fontSize: 11 }}
+            tick={{ fill: CHART_TICK, fontSize: 11 }}
             axisLine={{ stroke: "#3a3a3e" }}
             tickLine={false}
           />
           <YAxis
-            tick={{ fill: "#a1a1a6", fontSize: 11 }}
+            tick={{ fill: CHART_TICK, fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             tickFormatter={formatShortInr}
@@ -308,7 +311,7 @@ export function ExpenseCompareChart({
           />
           <Tooltip
             content={<ChartTooltip valueFormatter={(v) => formatInr(v)} />}
-            cursor={{ fill: "rgba(255,255,255,0.04)" }}
+            cursor={{ fill: "rgba(0,0,0,0.04)" }}
           />
           <Bar
             dataKey="total"
@@ -331,15 +334,15 @@ export function NetCompareChart({ thisMonth, prevMonth, thisLabel, prevLabel }) 
   return (
     <ResponsiveContainer width="100%" height={140}>
       <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#3a3a3e" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
         <XAxis
           dataKey="period"
-          tick={{ fill: "#a1a1a6", fontSize: 11 }}
+          tick={{ fill: CHART_TICK, fontSize: 11 }}
           axisLine={{ stroke: "#3a3a3e" }}
           tickLine={false}
         />
         <YAxis
-          tick={{ fill: "#a1a1a6", fontSize: 11 }}
+          tick={{ fill: CHART_TICK, fontSize: 11 }}
           axisLine={false}
           tickLine={false}
           tickFormatter={formatShortInr}
@@ -347,7 +350,7 @@ export function NetCompareChart({ thisMonth, prevMonth, thisLabel, prevLabel }) 
         />
         <Tooltip
           content={<ChartTooltip valueFormatter={(v) => formatInr(v)} />}
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={{ fill: "rgba(0,0,0,0.04)" }}
         />
         <Bar dataKey="net" name="Net (sales − expenses)" radius={[6, 6, 0, 0]} maxBarSize={72}>
           {data.map((entry) => (

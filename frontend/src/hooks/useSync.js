@@ -105,7 +105,10 @@ export function useSync(enabled) {
     await pullProducts();
     await pullCustomers();
     const sessions = await supabase?.from("register_sessions").select("*");
-    if (sessions?.data) await localDb.register_sessions.bulkPut(sessions.data);
+    if (sessions?.data) {
+      await localDb.register_sessions.clear();
+      await localDb.register_sessions.bulkPut(sessions.data);
+    }
   }, [enabled, pullProducts, pullCustomers, pullShopSettings]);
 
   useEffect(() => {

@@ -9,13 +9,14 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
+      devOptions: { enabled: false },
       includeAssets: ["logo.png"],
       manifest: {
         name: "Sri Sri Sathya Sai Automobiles",
         short_name: "SSSA POS",
         description: "POS and inventory for Sri Sri Sathya Sai Automobiles",
-        theme_color: "#1C1C1E",
-        background_color: "#1C1C1E",
+        theme_color: "#ffffff",
+        background_color: "#f5f5f5",
         display: "standalone",
         start_url: "/",
         icons: [

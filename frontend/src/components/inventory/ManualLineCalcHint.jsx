@@ -22,14 +22,14 @@ export function ManualLineCalcHint({ line }) {
       : 0;
 
   return (
-    <div className="col-span-full rounded-md bg-charcoal-3/80 px-3 py-2 text-xs text-white-muted">
-      <span className="text-white-faint">Expected: </span>
+    <div className="col-span-full rounded-md bg-paper/80 px-3 py-2 text-xs text-fog">
+      <span className="text-silver">Expected: </span>
       taxable {formatInr(expected.taxable)}
-      <span className="text-white-faint"> · </span>
+      <span className="text-silver"> · </span>
       CGST {formatInr(expected.cgstAmount)}
-      <span className="text-white-faint"> · </span>
+      <span className="text-silver"> · </span>
       SGST {formatInr(expected.sgstAmount)}
-      <span className="text-white-faint"> · </span>
+      <span className="text-silver"> · </span>
       total {formatInr(expected.lineTotal)}
       {enteredTaxable > 0 && taxableDiff > 1 ? (
         <span className="ml-2 text-warning">

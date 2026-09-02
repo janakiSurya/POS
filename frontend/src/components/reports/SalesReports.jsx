@@ -37,21 +37,22 @@ import {
 import { KpiCard, Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input, Label } from "../ui/Input";
+import { PageHeader } from "../shared/PageHeader";
 
 function StatHighlight({ label, value, sub, accent = "success" }) {
   const border =
     accent === "warning"
       ? "border-l-warning"
       : accent === "neutral"
-        ? "border-l-white/30"
+        ? "border-l-smoke"
         : "border-l-success";
   return (
     <div
-      className={`rounded-xl border border-charcoal-3 border-l-4 ${border} bg-charcoal-2/80 px-4 py-3`}
+      className={`rounded-xl border border-ash border-l-4 ${border} bg-canvas/80 px-3 py-3 sm:px-4`}
     >
-      <p className="text-xs uppercase tracking-wide text-white-faint">{label}</p>
-      <p className="mt-1 text-2xl font-bold tabular-nums text-white">{value}</p>
-      {sub ? <p className="mt-0.5 text-xs text-white-muted">{sub}</p> : null}
+      <p className="text-[11px] uppercase tracking-wide text-silver">{label}</p>
+      <p className="mt-1 text-xl font-bold tabular-nums text-ink sm:text-2xl">{value}</p>
+      {sub ? <p className="mt-0.5 text-xs text-fog">{sub}</p> : null}
     </div>
   );
 }
@@ -212,19 +213,16 @@ export function SalesReports() {
   ]);
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-white">Sales reports</h1>
-          <p className="text-sm text-white-muted">
-            Visual overview · sales, expenses, comparisons (IST)
-          </p>
-        </div>
-        <Button variant="secondary" className="text-xs" onClick={load}>
+    <div className="space-y-4 sm:space-y-6">
+      <PageHeader
+        title="Sales reports"
+        description="Visual overview · sales, expenses, comparisons (IST)"
+      >
+        <Button variant="secondary" className="w-full text-xs sm:w-auto" onClick={load}>
           <RefreshCw className="mr-1.5 inline h-3.5 w-3.5" />
           Refresh
         </Button>
-      </div>
+      </PageHeader>
 
       {error ? (
         <p className="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -233,11 +231,11 @@ export function SalesReports() {
       ) : null}
 
       {loading ? (
-        <p className="text-sm text-white-muted">Loading reports…</p>
+        <p className="text-sm text-fog">Loading reports…</p>
       ) : null}
 
       {/* Hero KPIs */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-4">
         <StatHighlight
           label="Sales this month"
           value={formatInr(stats.thisMonthSales.revenue)}
@@ -265,20 +263,20 @@ export function SalesReports() {
 
       {/* Custom date range + charts */}
       <Card>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
           <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-white-muted" />
-            <h2 className="font-semibold text-white">Selected period</h2>
+            <Calendar className="h-4 w-4 text-fog" />
+            <h2 className="font-semibold text-ink">Selected period</h2>
           </div>
-          <p className="text-sm tabular-nums text-white-muted">
+          <p className="text-xs tabular-nums text-fog sm:text-sm">
             Net {formatInr(stats.netCustomRange)} · {stats.customRangeSales.count}{" "}
             bills · {stats.customRangeExpenses.count} expenses
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <Label className="text-xs text-white-faint">From</Label>
+            <Label className="text-xs text-silver">From</Label>
             <Input
               type="date"
               className="mt-1"
@@ -288,7 +286,7 @@ export function SalesReports() {
             />
           </div>
           <div>
-            <Label className="text-xs text-white-faint">To</Label>
+            <Label className="text-xs text-silver">To</Label>
             <Input
               type="date"
               className="mt-1"
@@ -298,19 +296,19 @@ export function SalesReports() {
               onChange={(e) => setRangeEnd(e.target.value)}
             />
           </div>
-          <div className="sm:col-span-2 flex items-end">
-            <p className="text-sm text-white-muted">
+          <div className="sm:col-span-2 lg:col-span-2">
+            <p className="text-sm text-fog">
               {formatRangeLabel(rangeStart, rangeEnd)} · Sales{" "}
-              <span className="font-medium text-white">
+              <span className="font-medium text-ink">
                 {formatInr(stats.customRangeSales.revenue)}
               </span>
             </p>
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white-faint">
+        <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
+          <div className="min-w-0 lg:col-span-2">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-silver">
               Daily sales
             </p>
             <DailyBarChart
@@ -320,7 +318,7 @@ export function SalesReports() {
             />
           </div>
           <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white-faint">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-silver">
               Payment mix
             </p>
             <PaymentMixChart
@@ -332,8 +330,8 @@ export function SalesReports() {
         </div>
 
         {stats.dailyExpenses.some((d) => d.expenses > 0) ? (
-          <div className="mt-6 border-t border-charcoal-3 pt-6">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white-faint">
+          <div className="mt-6 border-t border-ash pt-6">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-silver">
               Daily expenses
             </p>
             <DailyBarChart
@@ -347,7 +345,7 @@ export function SalesReports() {
       </Card>
 
       {/* Sales comparisons */}
-      <div className="flex items-center gap-2 text-sm font-medium text-white-muted">
+      <div className="flex items-center gap-2 text-sm font-medium text-fog">
         <Receipt className="h-4 w-4" />
         Sales comparisons
       </div>
@@ -355,8 +353,8 @@ export function SalesReports() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold text-white">This week vs last week</h2>
-            <span className="text-xs text-white-faint">
+            <h2 className="font-semibold text-ink">This week vs last week</h2>
+            <span className="text-xs text-silver">
               {formatRangeLabel(stats.weekRange.start, stats.weekRange.end)}
             </span>
           </div>
@@ -373,8 +371,8 @@ export function SalesReports() {
 
         <Card>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold text-white">This month vs last month</h2>
-            <span className="text-xs text-white-faint">
+            <h2 className="font-semibold text-ink">This month vs last month</h2>
+            <span className="text-xs text-silver">
               {formatRangeLabel(monthRange.start, monthRange.end)}
             </span>
           </div>
@@ -391,7 +389,7 @@ export function SalesReports() {
       </div>
 
       {/* Expenses */}
-      <div className="flex items-center gap-2 text-sm font-medium text-white-muted">
+      <div className="flex items-center gap-2 text-sm font-medium text-fog">
         <Wallet className="h-4 w-4" />
         Expenses & net
       </div>
@@ -417,8 +415,8 @@ export function SalesReports() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold text-white">Expenses — week</h2>
-            <span className="text-xs text-white-faint">vs previous week</span>
+            <h2 className="font-semibold text-ink">Expenses — week</h2>
+            <span className="text-xs text-silver">vs previous week</span>
           </div>
           <ExpenseCompareChart
             currentLabel="This week"
@@ -433,8 +431,8 @@ export function SalesReports() {
 
         <Card>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold text-white">Expenses — month</h2>
-            <span className="text-xs text-white-faint">vs previous month</span>
+            <h2 className="font-semibold text-ink">Expenses — month</h2>
+            <span className="text-xs text-silver">vs previous month</span>
           </div>
           <ExpenseCompareChart
             currentLabel="This month"
@@ -450,10 +448,10 @@ export function SalesReports() {
 
       <Card>
         <div className="mb-3 flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-white-muted" />
-          <h2 className="font-semibold text-white">Net profit — month over month</h2>
+          <TrendingUp className="h-4 w-4 text-fog" />
+          <h2 className="font-semibold text-ink">Net profit — month over month</h2>
         </div>
-        <p className="mb-4 text-sm text-white-muted">
+        <p className="mb-4 text-sm text-fog">
           This month {formatInr(stats.netThisMonth)} · Last month{" "}
           {formatInr(stats.netPrevMonth)}
         </p>
@@ -465,7 +463,7 @@ export function SalesReports() {
         />
       </Card>
 
-      <p className="text-xs text-white-faint">
+      <p className="text-xs text-silver">
         {invoices.length} bills and {expenses.length} expenses synced. Today{" "}
         {formatDateIST(new Date())} (IST).
       </p>

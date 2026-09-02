@@ -18,6 +18,7 @@ import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
 import { ManualLineCalcHint } from "./ManualLineCalcHint";
 import { SupplierSelect } from "./SupplierSelect";
 import { compareInvoiceCalculation } from "../../lib/purchaseCalculations";
+import { PageHeader } from "../shared/PageHeader";
 
 const UOM_OPTIONS = ["PCS", "SET", "KG", "LTR", "BOX", "PAIR"];
 
@@ -216,17 +217,17 @@ export function PurchaseEntry({ profile, isOwner }) {
   }
 
   return (
-    <div className="space-y-8 p-4">
-      <h1 className="text-xl font-semibold text-white">Purchases</h1>
+    <div className="space-y-4 sm:space-y-8">
+      <PageHeader title="Purchases" />
       <Card>
-        <h2 className="mb-3 font-medium text-white">New purchase entry</h2>
-        <p className="mb-3 text-xs text-white-muted">
+        <h2 className="mb-3 font-medium text-ink">New purchase entry</h2>
+        <p className="mb-3 text-xs text-fog">
           Unit cost is excl. GST. Default qty is 1 and GST is 18% (9% CGST + 9%
           SGST). Pick unit as Piece (PCS) or Set, etc. Enter printed invoice totals
           to verify.
         </p>
         {error ? <p className="mb-2 text-sm text-danger">{error}</p> : null}
-        <div className="grid gap-3 sm:grid-cols-3 mb-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 mb-4">
           <div>
             <Label>Supplier</Label>
             <SupplierSelect value={supplierId} onChange={setSupplierId} />
@@ -245,7 +246,7 @@ export function PurchaseEntry({ profile, isOwner }) {
           </div>
         </div>
 
-        <div className="mb-4 grid gap-3 sm:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <Label>Printed taxable (₹)</Label>
             <Input
@@ -297,7 +298,7 @@ export function PurchaseEntry({ profile, isOwner }) {
         ) : null}
 
         {lines.map((l, idx) => (
-          <div key={idx} className="mb-3 space-y-2 rounded-lg border border-charcoal-3 p-3">
+          <div key={idx} className="mb-3 space-y-2 rounded-lg border border-ash p-3">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <Label className="text-xs">Part code</Label>
@@ -410,11 +411,11 @@ export function PurchaseEntry({ profile, isOwner }) {
           />
         ) : null}
 
-        <div className="flex gap-2 mt-4">
-          <Button type="button" variant="secondary" onClick={() => setLines([...lines, emptyLine()])}>
+        <div className="flex flex-col gap-2 mt-4 sm:flex-row">
+          <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => setLines([...lines, emptyLine()])}>
             Add line
           </Button>
-          <Button type="button" onClick={() => post()}>Post inward</Button>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => post()}>Post inward</Button>
         </div>
       </Card>
 
@@ -422,7 +423,7 @@ export function PurchaseEntry({ profile, isOwner }) {
         {costPrompt ? (
           <div className="space-y-3 text-sm">
             <p>{costPrompt.line.part_number}</p>
-            <p className="text-white-muted">
+            <p className="text-fog">
               Old {formatInr(costPrompt.oldCost)} → New {formatInr(costPrompt.inward)}
             </p>
             <div className="flex gap-2">

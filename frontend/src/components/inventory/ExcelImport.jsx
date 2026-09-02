@@ -24,6 +24,7 @@ import { buildSearchIndex } from "../../hooks/useSync";
 import { PurchaseInvoiceHistory } from "./PurchaseInvoiceHistory";
 import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
 import { compareInvoiceCalculation } from "../../lib/purchaseCalculations";
+import { PageHeader } from "../shared/PageHeader";
 
 export function ExcelImport({ profile, isOwner }) {
   const fileInputRef = useRef(null);
@@ -416,19 +417,18 @@ export function ExcelImport({ profile, isOwner }) {
     : null;
 
   return (
-    <div className="space-y-4 p-4">
-      <h1 className="text-xl font-semibold text-white">Excel import</h1>
-      <p className="text-sm text-white-muted">
-        Upload one supplier invoice at a time. Selling price is taken from MRP on
-        each line — you will be asked if MRP is missing.
-      </p>
+    <div className="space-y-4 sm:space-y-6">
+      <PageHeader
+        title="Excel import"
+        description="Upload one supplier invoice at a time. Selling price is taken from MRP on each line — you will be asked if MRP is missing."
+      />
 
       <Card>
-        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-charcoal-3 p-6 transition-colors hover:border-white/30 hover:bg-charcoal">
-          <Upload className="h-8 w-8 shrink-0 text-white-muted" />
+        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-ash p-6 transition-colors hover:border-smoke hover:bg-paper">
+          <Upload className="h-8 w-8 shrink-0 text-fog" />
           <div>
-            <p className="font-medium text-white">Choose Excel file</p>
-            <p className="text-xs text-white-muted">.xlsx, .xls, or .csv</p>
+            <p className="font-medium text-ink">Choose Excel file</p>
+            <p className="text-xs text-fog">.xlsx, .xls, or .csv</p>
           </div>
           <input
             ref={fileInputRef}
@@ -443,40 +443,40 @@ export function ExcelImport({ profile, isOwner }) {
       </Card>
 
       {importState?.phase === "preparing" ? (
-        <Card className="border-white/20">
-          <p className="text-sm text-white-muted">Preparing invoice…</p>
+        <Card className="border-smoke">
+          <p className="text-sm text-fog">Preparing invoice…</p>
         </Card>
       ) : null}
 
       {importState?.phase === "processing" ? (
-        <Card className="border-white/20">
+        <Card className="border-smoke">
           <div className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5 text-white-muted animate-pulse" />
-            <p className="font-medium text-white">
+            <FileSpreadsheet className="h-5 w-5 text-fog animate-pulse" />
+            <p className="font-medium text-ink">
               Importing {importState.invoiceNumber}
             </p>
           </div>
-          <p className="mt-2 text-sm text-white-muted">
+          <p className="mt-2 text-sm text-fog">
             Line {importState.current} of {importState.total}
           </p>
           {importState.label ? (
-            <p className="mt-1 truncate text-xs text-white-faint">
+            <p className="mt-1 truncate text-xs text-silver">
               {importState.label}
             </p>
           ) : null}
           {importState.fileInvoiceTotal > 1 ? (
-            <p className="mt-0.5 text-xs text-white-faint">
+            <p className="mt-0.5 text-xs text-silver">
               File invoice {importState.fileInvoiceIndex} of{" "}
               {importState.fileInvoiceTotal}
             </p>
           ) : null}
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-charcoal-3">
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-paper">
             <div
               className="h-full rounded-full bg-white transition-all duration-300"
               style={{ width: `${progressPct}%` }}
             />
           </div>
-          <p className="mt-2 text-right text-xs tabular-nums text-white-faint">
+          <p className="mt-2 text-right text-xs tabular-nums text-silver">
             {progressPct}%
           </p>
         </Card>
@@ -488,11 +488,11 @@ export function ExcelImport({ profile, isOwner }) {
             <CheckCircle2 className="h-6 w-6 shrink-0 text-success" />
             <div className="min-w-0">
               <p className="text-lg font-semibold text-success">Done!</p>
-              <p className="mt-1 text-sm text-white">
+              <p className="mt-1 text-sm text-ink">
                 <span className="font-mono">{importState.invoiceNumber}</span>
                 posted for {importState.supplier}
               </p>
-              <p className="text-sm text-white-muted">
+              <p className="text-sm text-fog">
                 {importState.lineCount} lines imported
                 {importState.invoiceCount > 1
                   ? ` · ${importState.invoiceCount} invoices`
@@ -522,8 +522,8 @@ export function ExcelImport({ profile, isOwner }) {
         <Card>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="font-medium text-white">{preview.supplier.name}</p>
-              <p className="text-sm text-white-muted">
+              <p className="font-medium text-ink">{preview.supplier.name}</p>
+              <p className="text-sm text-fog">
                 {preview.invoiceNumber} · {preview.invoiceDate} ·{" "}
                 {preview.lines.length} lines
               </p>
@@ -552,14 +552,14 @@ export function ExcelImport({ profile, isOwner }) {
                   }}
                   className={`rounded-lg px-3 py-1.5 text-xs font-mono transition-colors ${
                     idx === previewIndex
-                      ? "bg-white text-charcoal"
-                      : "bg-charcoal-3 text-white-muted hover:text-white"
+                      ? "bg-action text-canvas"
+                      : "bg-paper text-fog hover:text-ink"
                   }`}
                 >
                   {p.invoiceNumber} ({p.lines.length})
                 </button>
               ))}
-              <p className="text-xs text-white-faint self-center">
+              <p className="text-xs text-silver self-center">
                 {parsedQueue.length} invoices in this file — all will import
               </p>
             </div>
@@ -580,7 +580,7 @@ export function ExcelImport({ profile, isOwner }) {
           ) : null}
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[960px] text-left text-sm">
-              <thead className="text-white-muted">
+              <thead className="text-fog">
                 <tr>
                   <th className="px-2 py-1">Code</th>
                   <th className="px-2 py-1">Description</th>
@@ -596,16 +596,16 @@ export function ExcelImport({ profile, isOwner }) {
               </thead>
               <tbody>
                 {preview.lines.map((l) => (
-                  <tr key={l.lineNo} className="border-t border-charcoal-3">
+                  <tr key={l.lineNo} className="border-t border-ash">
                     <td className="px-2 py-1 font-mono text-xs">{l.code}</td>
                     <td className="px-2 py-1 max-w-[200px] truncate">{l.description}</td>
-                    <td className="px-2 py-1 text-xs text-white-muted">
+                    <td className="px-2 py-1 text-xs text-fog">
                       {l.brand || "—"}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums">
                       {formatQty(l.qty)}
                     </td>
-                    <td className="px-2 py-1 text-right text-xs text-white-muted">
+                    <td className="px-2 py-1 text-right text-xs text-fog">
                       {l.uom || "PCS"}
                     </td>
                     <td
@@ -653,11 +653,11 @@ export function ExcelImport({ profile, isOwner }) {
       >
         {mrpPrompt ? (
           <div className="space-y-3 text-sm">
-            <p className="text-white">{mrpPrompt.line.description}</p>
-            <p className="font-mono text-xs text-white-muted">
+            <p className="text-ink">{mrpPrompt.line.description}</p>
+            <p className="font-mono text-xs text-fog">
               {mrpPrompt.line.code}
             </p>
-            <p className="text-white-muted">
+            <p className="text-fog">
               This line has no MRP on the invoice. Enter the selling price for
               POS (purchase cost: {formatInr(mrpPrompt.inwardCost)}).
             </p>
@@ -699,8 +699,8 @@ export function ExcelImport({ profile, isOwner }) {
       >
         {costPrompt ? (
           <div className="space-y-3 text-sm">
-            <p className="text-white">{costPrompt.line.description}</p>
-            <p className="text-white-muted">
+            <p className="text-ink">{costPrompt.line.description}</p>
+            <p className="text-fog">
               Old cost: {formatInr(costPrompt.oldCost)} → New:{" "}
               {formatInr(costPrompt.inwardCost)}
             </p>
