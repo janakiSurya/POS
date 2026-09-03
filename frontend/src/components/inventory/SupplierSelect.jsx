@@ -1,25 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { localDb } from "../../db/localDb";
-import { supabase } from "../../lib/supabaseClient";
-import { fetchAllFromSupabase } from "../../lib/supabaseFetch";
 import { normalizeSupplierName } from "../../lib/normalizeSupplier";
 import { findOrCreateSupplier } from "../../lib/purchases";
+import { FreshKeys, invalidateFresh } from "../../lib/freshSync";
+import { syncSuppliersIfNeeded } from "../../lib/hybridSync";
 import { Input, Label, Select } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { Modal } from "../ui/Modal";
-
-async function loadSuppliers() {
-  if (supabase && navigator.onLine) {
-    const data = await fetchAllFromSupabase("suppliers", {
-      order: (q) => q.order("name"),
-    });
-    await localDb.suppliers.clear();
-    if (data.length) await localDb.suppliers.bulkPut(data);
-    return data;
-  }
-  return localDb.suppliers.orderBy("name").toArray();
-}
 
 function dedupeSuppliers(list) {
   const byKey = new Map();
@@ -50,10 +38,13 @@ export function SupplierSelect({ value, onChange, disabled }) {
   const [addError, setAddError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const rows = dedupeSuppliers(await loadSuppliers());
+      await syncSuppliersIfNeeded(force);
+      const rows = dedupeSuppliers(
+        await localDb.suppliers.orderBy("name").toArray(),
+      );
       setSuppliers(rows);
     } finally {
       setLoading(false);
@@ -61,7 +52,7 @@ export function SupplierSelect({ value, onChange, disabled }) {
   }, []);
 
   useEffect(() => {
-    refresh();
+    refresh(false);
   }, [refresh]);
 
   async function saveNewSupplier() {
@@ -91,7 +82,8 @@ export function SupplierSelect({ value, onChange, disabled }) {
         phone: newPhone,
         address: newAddress,
       });
-      await refresh();
+      await invalidateFresh(FreshKeys.SUPPLIERS);
+      await refresh(true);
       onChange(supplier.id);
       setAddOpen(false);
       setNewName("");

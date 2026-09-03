@@ -1,19 +1,23 @@
-import { useEffect, useState } from "react";
-import { RefreshCw, FileDown } from "lucide-react";
-import { localDb } from "../../db/localDb";
-import { supabase } from "../../lib/supabaseClient";
-import { formatInr, formatQty, toNum } from "../../lib/format";
-import { businessDateIST } from "../../lib/businessDay";
-import { syncDashboardData } from "../../lib/dashboardSync";
 import {
   listDayCloseReports,
   syncDayCloseReportsFromServer,
 } from "../../lib/dayCloseReport";
 import { downloadDayCloseReportPdf } from "../../lib/exportDownload";
 import { isOnline } from "../../lib/network";
+import {
+  getDashboardKpisCached,
+  syncDashboardSupportIfNeeded,
+} from "../../lib/hybridSync";
 import { KpiCard, Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { PageHeader } from "../shared/PageHeader";
+import { localDb } from "../../db/localDb";
+import { catalogCount, catalogPage, initCatalog } from "../../db/catalogSqlite";
+import { supabase } from "../../lib/supabaseClient";
+import { formatInr, formatQty, toNum } from "../../lib/format";
+import { businessDateIST } from "../../lib/businessDay";
+import { useCallback, useEffect, useState } from "react";
+import { RefreshCw, FileDown } from "lucide-react";
 
 export function Dashboard() {
   const [kpis, setKpis] = useState({
@@ -33,61 +37,106 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState("");
 
-  async function load() {
+  const applyRpc = useCallback((rpc) => {
+    setKpis({
+      stockCost: rpc.stockCost,
+      retailValue: rpc.retailValue,
+      todayRevenue: rpc.todayRevenue,
+      todayCash: rpc.todayCash,
+      todayUpi: rpc.todayUpi,
+      todayCredit: rpc.todayCredit,
+      grossProfit: rpc.grossProfit,
+      productCount: rpc.productCount,
+    });
+    setLowStock(rpc.lowStock || []);
+    setDeadStock(rpc.deadStock || []);
+  }, []);
+
+  const loadLocalFallback = useCallback(async () => {
+    await initCatalog();
+    const page = await catalogPage({ offset: 0, limit: 5000 });
+    let stockCost = 0;
+    let retailValue = 0;
+    const low = [];
+    for (const p of page) {
+      stockCost += toNum(p.purchase_price) * toNum(p.stock_quantity);
+      retailValue += toNum(p.selling_price) * toNum(p.stock_quantity);
+      if (p.stock_quantity <= p.min_stock_alert) low.push(p);
+    }
+    setLowStock(low.slice(0, 10));
+
+    const today = businessDateIST();
+    const invoices = await localDb.invoices.toArray();
+    const todayInv = invoices.filter((i) => i.created_at?.startsWith(today));
+    let todayCash = 0;
+    let todayUpi = 0;
+    let todayCredit = 0;
+    let grossProfit = 0;
+
+    for (const inv of todayInv) {
+      if (inv.payment_method === "CASH") todayCash += toNum(inv.total_amount);
+      if (inv.payment_method === "UPI") todayUpi += toNum(inv.total_amount);
+      if (inv.payment_method === "CREDIT") todayCredit += toNum(inv.total_amount);
+    }
+
+    const allItems = await localDb.invoice_items.toArray();
+    const invMap = new Map(invoices.map((i) => [i.id, i]));
+    const soldProductIds = new Set();
+
+    for (const item of allItems) {
+      const inv = invMap.get(item.invoice_id);
+      if (!inv) continue;
+      soldProductIds.add(item.product_id);
+      if (inv.created_at?.slice(0, 10) === today) {
+        grossProfit +=
+          toNum(item.line_total) - toNum(item.unit_cost) * toNum(item.quantity);
+      }
+    }
+
+    const dead = page.filter(
+      (p) => !soldProductIds.has(p.id) && p.stock_quantity > 0,
+    );
+    setDeadStock(dead.slice(0, 10));
+
+    setKpis({
+      stockCost,
+      retailValue,
+      todayRevenue: todayCash + todayUpi + todayCredit,
+      todayCash,
+      todayUpi,
+      todayCredit,
+      grossProfit,
+      productCount: catalogCount() || page.length,
+    });
+  }, []);
+
+  const load = useCallback(async (force = false) => {
     setSyncError("");
+    if (force) setLoading(true);
     try {
       if (supabase && isOnline()) {
         try {
-          await syncDashboardData();
-          await syncDayCloseReportsFromServer();
+          await syncDashboardSupportIfNeeded(force);
+          if (force) await syncDayCloseReportsFromServer();
         } catch (syncErr) {
           setSyncError(syncErr.message || "Could not sync — showing local data.");
         }
       }
 
-      const products = await localDb.products.toArray();
-      let stockCost = 0;
-      let retailValue = 0;
-      const low = [];
-      for (const p of products) {
-        stockCost += toNum(p.purchase_price) * toNum(p.stock_quantity);
-        retailValue += toNum(p.selling_price) * toNum(p.stock_quantity);
-        if (p.stock_quantity <= p.min_stock_alert) low.push(p);
-      }
-      setLowStock(low.slice(0, 10));
-
-      const today = businessDateIST();
-      const invoices = await localDb.invoices.toArray();
-      const todayInv = invoices.filter((i) => i.created_at?.startsWith(today));
-      let todayCash = 0;
-      let todayUpi = 0;
-      let todayCredit = 0;
-      let grossProfit = 0;
-
-      for (const inv of todayInv) {
-        if (inv.payment_method === "CASH") todayCash += toNum(inv.total_amount);
-        if (inv.payment_method === "UPI") todayUpi += toNum(inv.total_amount);
-        if (inv.payment_method === "CREDIT") todayCredit += toNum(inv.total_amount);
-      }
-
-      const allItems = await localDb.invoice_items.toArray();
-      const invMap = new Map(invoices.map((i) => [i.id, i]));
-      const soldProductIds = new Set();
-
-      for (const item of allItems) {
-        const inv = invMap.get(item.invoice_id);
-        if (!inv) continue;
-        soldProductIds.add(item.product_id);
-        if (inv.created_at?.slice(0, 10) === today) {
-          grossProfit +=
-            toNum(item.line_total) - toNum(item.unit_cost) * toNum(item.quantity);
+      let usedRpc = false;
+      if (supabase && isOnline()) {
+        try {
+          const { data: rpc } = await getDashboardKpisCached(force);
+          if (rpc) {
+            applyRpc(rpc);
+            usedRpc = true;
+          }
+        } catch (rpcErr) {
+          console.warn("Dashboard RPC failed, using local catalog.", rpcErr);
         }
       }
 
-      const dead = products.filter(
-        (p) => !soldProductIds.has(p.id) && p.stock_quantity > 0,
-      );
-      setDeadStock(dead.slice(0, 10));
+      if (!usedRpc) await loadLocalFallback();
 
       const sess = await localDb.register_sessions
         .orderBy("opened_at")
@@ -98,37 +147,28 @@ export function Dashboard() {
 
       const reports = await listDayCloseReports(30);
       setDayReports(reports);
-
-      setKpis({
-        stockCost,
-        retailValue,
-        todayRevenue: todayCash + todayUpi + todayCredit,
-        todayCash,
-        todayUpi,
-        todayCredit,
-        grossProfit,
-        productCount: products.length,
-      });
     } catch (err) {
       setSyncError(err.message || "Could not sync dashboard data.");
     } finally {
       setLoading(false);
     }
-  }
+  }, [applyRpc, loadLocalFallback]);
 
   useEffect(() => {
-    load();
-    const t = setInterval(load, 30000);
-    return () => clearInterval(t);
-  }, []);
+    load(false);
+  }, [load]);
 
   return (
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Owner dashboard"
-        description={`Live from Supabase · ${kpis.productCount} parts in stock`}
+        description={`${kpis.productCount} parts in stock · refreshes when data changes`}
       >
-        <Button variant="secondary" className="w-full text-xs sm:w-auto" onClick={load}>
+        <Button
+          variant="secondary"
+          className="w-full text-xs sm:w-auto"
+          onClick={() => load(true)}
+        >
           <RefreshCw className="mr-1.5 inline h-3.5 w-3.5" />
           Refresh
         </Button>

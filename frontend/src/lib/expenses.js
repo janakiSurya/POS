@@ -61,7 +61,6 @@ export async function syncFixedCostsFromServer() {
 }
 
 export async function getTemplates() {
-  await syncFixedCostsFromServer();
   return localDb.fixed_cost_templates.filter((t) => t.active !== false).toArray();
 }
 

@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
-import { localDb } from "../../db/localDb";
 import { supabase } from "../../lib/supabaseClient";
-import { fetchAllFromSupabase } from "../../lib/supabaseFetch";
+import { syncProductsIfNeeded } from "../../lib/hybridSync";
+import { catalogAll, catalogCount, catalogPage, catalogPut, initCatalog } from "../../db/catalogSqlite";
+import { searchProducts, upsertSearchProduct } from "../../lib/searchClient";
+import { FreshKeys, invalidateFresh } from "../../lib/freshSync";
 import { formatInr, formatQty } from "../../lib/format";
 import {
   downloadInventoryExcel,
@@ -12,11 +14,10 @@ import { Button } from "../ui/Button";
 import { DownloadActions } from "../shared/DownloadActions";
 import { Input, Label } from "../ui/Input";
 import { Card } from "../ui/Card";
-import { buildSearchIndex, searchProducts } from "../../hooks/useSync";
-import { isOnline } from "../../lib/network";
 import { PageHeader } from "../shared/PageHeader";
 
 const UOM_OPTIONS = ["PCS", "SET", "KG", "LTR", "BOX", "PAIR"];
+const PAGE_SIZE = 80;
 
 function emptyForm() {
   return {
@@ -52,31 +53,30 @@ function productToForm(p) {
 
 export function InventoryList() {
   const [products, setProducts] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(0);
   const [query, setQuery] = useState("");
   const [form, setForm] = useState(emptyForm());
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  async function loadProducts() {
+  async function loadPage(nextPage = page, nextQuery = query) {
     setLoading(true);
     try {
-      if (supabase && isOnline()) {
-        try {
-          const data = await fetchAllFromSupabase("products");
-          if (data.length) {
-            await localDb.products.bulkPut(data);
-            buildSearchIndex(data);
-            setProducts(data);
-            return;
-          }
-        } catch (syncErr) {
-          setError(syncErr.message || "Sync failed — showing local inventory.");
-        }
+      await initCatalog();
+      const q = nextQuery.trim();
+      setTotalCount(catalogCount());
+      if (q) {
+        const hits = await searchProducts(q, PAGE_SIZE);
+        setProducts(hits);
+      } else {
+        const rows = await catalogPage({
+          offset: nextPage * PAGE_SIZE,
+          limit: PAGE_SIZE,
+        });
+        setProducts(rows);
       }
-      const all = await localDb.products.toArray();
-      buildSearchIndex(all);
-      setProducts(all);
     } catch (err) {
       setError(err.message || "Could not load inventory.");
     } finally {
@@ -84,31 +84,32 @@ export function InventoryList() {
     }
   }
 
+  async function loadProducts(force = false) {
+    setError("");
+    setLoading(true);
+    try {
+      await syncProductsIfNeeded(force);
+      setPage(0);
+      await loadPage(0, query);
+    } catch (err) {
+      setError(err.message || "Could not load inventory.");
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    loadProducts();
+    loadProducts(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim();
-    if (!q) {
-      return [...products].sort((a, b) =>
-        a.name.localeCompare(b.name, "en", { sensitivity: "base" }),
-      );
-    }
-    const hits = searchProducts(q, 500);
-    if (hits.length) return hits;
-    const lower = q.toLowerCase();
-    return products.filter(
-      (p) =>
-        p.part_number?.toLowerCase().includes(lower) ||
-        p.name?.toLowerCase().includes(lower) ||
-        p.brand?.toLowerCase().includes(lower) ||
-        p.category?.toLowerCase().includes(lower) ||
-        (p.vehicle_compatibility || []).some((v) =>
-          v.toLowerCase().includes(lower),
-        ),
-    );
-  }, [products, query]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setPage(0);
+      loadPage(0, query);
+    }, 180);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   async function save(e) {
     e.preventDefault();
@@ -145,8 +146,10 @@ export function InventoryList() {
       }
     }
 
-    await localDb.products.put(row);
-    await loadProducts();
+    await catalogPut(row);
+    upsertSearchProduct(row);
+    await invalidateFresh(FreshKeys.DASHBOARD);
+    await loadPage(page, query);
     setForm(emptyForm());
     setEditing(null);
   }
@@ -168,15 +171,19 @@ export function InventoryList() {
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Inventory"
-        description={`${products.length} parts · search by code, name, brand, or vehicle`}
+        description={`${totalCount} parts · search by code, name, brand, or vehicle`}
       >
         <DownloadActions
           excelLabel="Excel"
           pdfLabel="PDF"
-          onExcel={() => downloadInventoryExcel(filtered)}
-          onPdf={() => downloadInventoryPdf(filtered)}
+          onExcel={async () => downloadInventoryExcel(await catalogAll())}
+          onPdf={async () => downloadInventoryPdf(await catalogAll())}
         />
-        <Button variant="secondary" className="w-full text-xs sm:w-auto" onClick={loadProducts}>
+        <Button
+          variant="secondary"
+          className="w-full text-xs sm:w-auto"
+          onClick={() => loadProducts(true)}
+        >
           Refresh
         </Button>
       </PageHeader>
@@ -325,12 +332,12 @@ export function InventoryList() {
       <div className="space-y-2 lg:hidden">
         {loading ? (
           <p className="py-8 text-center text-sm text-fog">Loading…</p>
-        ) : filtered.length === 0 ? (
+        ) : products.length === 0 ? (
           <Card className="text-center text-sm text-silver">
             {query ? "No parts match your search." : "No parts yet. Add one or import Excel."}
           </Card>
         ) : (
-          filtered.map((p) => (
+          products.map((p) => (
             <div
               key={p.id}
               className={`rounded-lg border border-ash bg-canvas p-3 ${
@@ -359,9 +366,9 @@ export function InventoryList() {
             </div>
           ))
         )}
-        {!loading && filtered.length > 0 ? (
+        {!loading && products.length > 0 ? (
           <p className="text-xs text-silver">
-            Showing {filtered.length} of {products.length} parts
+            Showing {products.length} of {totalCount} parts
           </p>
         ) : null}
       </div>
@@ -392,14 +399,14 @@ export function InventoryList() {
                   Loading…
                 </td>
               </tr>
-            ) : filtered.length === 0 ? (
+            ) : products.length === 0 ? (
               <tr>
                 <td colSpan={12} className="px-3 py-8 text-center text-silver">
                   {query ? "No parts match your search." : "No parts yet. Add one or import Excel."}
                 </td>
               </tr>
             ) : (
-              filtered.map((p) => (
+              products.map((p) => (
                 <tr
                   key={p.id}
                   className={`border-t border-ash ${
@@ -445,10 +452,43 @@ export function InventoryList() {
             )}
           </tbody>
         </table>
-        {!loading && filtered.length > 0 ? (
-          <p className="border-t border-ash px-3 py-2 text-xs text-silver">
-            Showing {filtered.length} of {products.length} parts
-          </p>
+        {!loading && products.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ash px-3 py-2">
+            <p className="text-xs text-silver">
+              Showing {products.length} of {totalCount} parts
+              {!query.trim() ? ` · page ${page + 1}` : ""}
+            </p>
+            {!query.trim() && totalCount > PAGE_SIZE ? (
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="text-xs"
+                  disabled={page === 0}
+                  onClick={() => {
+                    const next = Math.max(0, page - 1);
+                    setPage(next);
+                    loadPage(next, query);
+                  }}
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="text-xs"
+                  disabled={(page + 1) * PAGE_SIZE >= totalCount}
+                  onClick={() => {
+                    const next = page + 1;
+                    setPage(next);
+                    loadPage(next, query);
+                  }}
+                >
+                  Next
+                </Button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
         </div>
       </div>

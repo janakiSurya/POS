@@ -5,6 +5,7 @@ import { fetchAllFromSupabase } from "./supabaseFetch";
 import { toNum } from "./format";
 import { isOnline } from "./network";
 import { saveDayCloseReport } from "./dayCloseReport";
+import { FreshKeys, invalidateFresh } from "./freshSync";
 
 export async function getTodayOpenSession() {
   const date = businessDateIST();
@@ -157,11 +158,13 @@ export async function addExpense({ sessionId, userId, amount, note, category = "
       .single();
     if (error) throw error;
     await localDb.cash_expenses.put(data);
+    await invalidateFresh(FreshKeys.EXPENSES, FreshKeys.DASHBOARD);
     return data;
   }
 
   await localDb.cash_expenses.put(row);
   await queueMutation({ type: "expense", payload: row });
+  await invalidateFresh(FreshKeys.EXPENSES, FreshKeys.DASHBOARD);
   return row;
 }
 

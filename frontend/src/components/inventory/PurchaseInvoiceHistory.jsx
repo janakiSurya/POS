@@ -4,8 +4,8 @@ import { localDb } from "../../db/localDb";
 import { formatInr } from "../../lib/format";
 import {
   loadPurchaseInvoiceDetails,
-  syncPurchaseInvoicesFromServer,
 } from "../../lib/purchases";
+import { syncPurchasesIfNeeded, syncSuppliersIfNeeded } from "../../lib/hybridSync";
 import { compareStoredInvoice } from "../../lib/purchaseCalculations";
 import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
 import { PurchaseInvoiceDocument } from "../documents/PurchaseInvoiceDocument";
@@ -43,10 +43,11 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      await syncPurchaseInvoicesFromServer();
+      await syncPurchasesIfNeeded(force);
+      await syncSuppliersIfNeeded(force);
       const rows = await localDb.purchase_invoices
         .orderBy("invoice_date")
         .reverse()
@@ -68,7 +69,7 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
   }, []);
 
   useEffect(() => {
-    load();
+    load(false);
   }, [load, refreshKey]);
 
   const filtered = invoices.filter((inv) => {
@@ -95,7 +96,11 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
             Open any bill to view, verify, and download as PDF or Excel
           </p>
         </div>
-        <Button variant="secondary" className="w-full shrink-0 text-xs sm:w-auto" onClick={load}>
+        <Button
+          variant="secondary"
+          className="w-full shrink-0 text-xs sm:w-auto"
+          onClick={() => load(true)}
+        >
           <RefreshCw className="mr-1.5 inline h-3.5 w-3.5" />
           Refresh
         </Button>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { localDb } from "../../db/localDb";
-import { syncAllExpensesFromServer } from "../../lib/register";
+import { syncExpensesIfNeeded, syncFixedCostsIfNeeded } from "../../lib/hybridSync";
 import {
   EXPENSE_CATEGORIES,
   categoryLabel,
@@ -13,6 +13,7 @@ import {
   logFixedCost,
   saveTemplate,
 } from "../../lib/expenses";
+import { FreshKeys, invalidateFresh } from "../../lib/freshSync";
 import { formatInr, toNum } from "../../lib/format";
 import { Button } from "../ui/Button";
 import { Input, Label } from "../ui/Input";
@@ -48,10 +49,10 @@ function DailyExpensesTab({ userId }) {
   const [catFilter, setCatFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      await syncAllExpensesFromServer();
+      await syncExpensesIfNeeded(force);
       const all = await localDb.cash_expenses.toArray();
       // Filter to current month (IST)
       const month = currentMonthKey();
@@ -67,7 +68,7 @@ function DailyExpensesTab({ userId }) {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(false); }, [load]);
 
   const shown = catFilter === "ALL"
     ? expenses
@@ -162,7 +163,8 @@ function MonthlyFixedTab({ userId }) {
   const [logging, setLogging] = useState(false);
   const month = currentMonthKey();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    await syncFixedCostsIfNeeded(force);
     const [ts, ls] = await Promise.all([
       getTemplates(),
       getFixedCostLogsForMonth(month),
@@ -171,7 +173,7 @@ function MonthlyFixedTab({ userId }) {
     setLogs(ls);
   }, [month]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(false); }, [load]);
 
   async function submitTemplate(e) {
     e.preventDefault();
@@ -179,9 +181,10 @@ function MonthlyFixedTab({ userId }) {
     setSaving(true);
     try {
       await saveTemplate({ id: editId ?? undefined, userId, ...form });
+      await invalidateFresh(FreshKeys.FIXED_COSTS, FreshKeys.DASHBOARD);
       setForm(emptyTemplate());
       setEditId(null);
-      await load();
+      await load(true);
     } catch (err) {
       setError(err.message || "Could not save.");
     } finally {
@@ -192,7 +195,8 @@ function MonthlyFixedTab({ userId }) {
   async function handleDelete(id) {
     if (!confirm("Remove this recurring expense?")) return;
     await deleteTemplate(id);
-    await load();
+    await invalidateFresh(FreshKeys.FIXED_COSTS, FreshKeys.DASHBOARD);
+    await load(true);
   }
 
   function startEdit(t) {
@@ -230,7 +234,8 @@ function MonthlyFixedTab({ userId }) {
         paidDate: logDate || null,
       });
       setLogModal(null);
-      await load();
+      await invalidateFresh(FreshKeys.FIXED_COSTS, FreshKeys.DASHBOARD, FreshKeys.EXPENSES);
+      await load(true);
     } catch (err) {
       setLogError(err.message || "Could not log.");
     } finally {
@@ -240,7 +245,8 @@ function MonthlyFixedTab({ userId }) {
 
   async function removeLog(id) {
     await deleteFixedCostLog(id);
-    await load();
+    await invalidateFresh(FreshKeys.FIXED_COSTS, FreshKeys.DASHBOARD, FreshKeys.EXPENSES);
+    await load(true);
   }
 
   const loggedTemplateIds = new Set(logs.map((l) => l.template_id));

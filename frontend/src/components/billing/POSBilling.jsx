@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Input, Label } from "../ui/Input";
-import { searchProducts } from "../../hooks/useSync";
+import { searchProducts } from "../../lib/searchClient";
 import { localDb } from "../../db/localDb";
 import {
   buildCartLine,
@@ -83,8 +83,16 @@ export function POSBilling({ session, profile, isOwner }) {
   }, []);
 
   useEffect(() => {
-    setResults(searchProducts(query));
-    setSelectedIdx(0);
+    let cancelled = false;
+    searchProducts(query).then((rows) => {
+      if (!cancelled) {
+        setResults(rows);
+        setSelectedIdx(0);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [query]);
 
   const totals = computeCartTotals(

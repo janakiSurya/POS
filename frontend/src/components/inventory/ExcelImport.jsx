@@ -20,7 +20,10 @@ import { Input, Label } from "../ui/Input";
 import { Card } from "../ui/Card";
 import { Modal } from "../ui/Modal";
 import { DownloadActions } from "../shared/DownloadActions";
-import { buildSearchIndex } from "../../hooks/useSync";
+import { catalogGetByPart, catalogPut, catalogForIndex } from "../../db/catalogSqlite";
+import { upsertSearchProduct, rebuildSearchIndex } from "../../lib/searchClient";
+import { hydrateProducts } from "../../lib/productHydrate";
+import { FreshKeys, invalidateFresh, markFresh } from "../../lib/freshSync";
 import { PurchaseInvoiceHistory } from "./PurchaseInvoiceHistory";
 import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
 import { compareInvoiceCalculation } from "../../lib/purchaseCalculations";
@@ -95,10 +98,7 @@ export function ExcelImport({ profile, isOwner }) {
 
   async function resolveProduct(code, description, inwardCost, mrp, brand) {
     const sell = toNum(mrp);
-    let product = await localDb.products
-      .where("part_number")
-      .equals(code.toUpperCase())
-      .first();
+    let product = await catalogGetByPart(code.toUpperCase());
     if (!product && supabase) {
       const { data } = await supabase
         .from("products")
@@ -106,7 +106,10 @@ export function ExcelImport({ profile, isOwner }) {
         .eq("part_number", code.toUpperCase())
         .maybeSingle();
       product = data;
-      if (data) await localDb.products.put(data);
+      if (data) {
+        await catalogPut(data);
+        upsertSearchProduct(data);
+      }
     }
     if (!product) {
       const newP = {
@@ -133,7 +136,8 @@ export function ExcelImport({ profile, isOwner }) {
       } else {
         product = newP;
       }
-      await localDb.products.put(product);
+      await catalogPut(product);
+      upsertSearchProduct(product);
     }
     return product;
   }
@@ -338,8 +342,11 @@ export function ExcelImport({ profile, isOwner }) {
       if (fileInputRef.current) fileInputRef.current.value = "";
       setHistoryKey((k) => k + 1);
 
-      const all = await localDb.products.toArray();
-      buildSearchIndex(all);
+      await hydrateProducts();
+      await markFresh(FreshKeys.PRODUCTS);
+      await invalidateFresh(FreshKeys.PURCHASES, FreshKeys.DASHBOARD);
+      const chunks = await catalogForIndex();
+      await rebuildSearchIndex(chunks);
     } catch (err) {
       setError(err.message || "Import failed.");
       setImportState(null);

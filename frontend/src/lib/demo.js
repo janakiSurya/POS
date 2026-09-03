@@ -1,5 +1,6 @@
 import { localDb } from "../db/localDb";
-import { buildSearchIndex } from "../hooks/useSync";
+import { catalogBulkPut } from "../db/catalogSqlite";
+import { rebuildSearchIndex } from "./searchClient";
 
 export async function seedDemoData() {
   if (import.meta.env.VITE_SUPABASE_URL) return;
@@ -66,8 +67,15 @@ export async function seedDemoData() {
     },
   ];
 
-  await localDb.products.bulkPut(products);
-  buildSearchIndex(products);
+  await catalogBulkPut(products);
+  await rebuildSearchIndex([
+    products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      part_number: p.part_number,
+      vehicles: (p.vehicle_compatibility || []).join(" "),
+    })),
+  ]);
 
   await localDb.sync_meta.put({ key: "demo_invoice_num", value: 1 });
 }

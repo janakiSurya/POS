@@ -29,7 +29,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,wasm}"],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
@@ -43,4 +43,10 @@ export default defineConfig({
       },
     }),
   ],
+  worker: {
+    format: "es",
+  },
+  optimizeDeps: {
+    include: ["sql.js/dist/sql-wasm.js"],
+  },
 });

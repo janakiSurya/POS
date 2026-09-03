@@ -1,8 +1,10 @@
 import { localDb, queueMutation } from "../db/localDb";
+import { catalogGet, catalogGetMany, catalogUpdate } from "../db/catalogSqlite";
 import { supabase } from "./supabaseClient";
 import { fetchAllFromSupabase } from "./supabaseFetch";
 import { lineTotal, toNum } from "./format";
 import { isOnline } from "./network";
+import { invalidateOwnerAggregates } from "./freshSync";
 
 export async function findCustomerByPhone(phone) {
   const normalized = phone.replace(/\D/g, "");
@@ -67,12 +69,12 @@ export async function completeSale({
 
   // Optimistic local stock
   for (const line of lines) {
-    const product = await localDb.products.get(line.product_id);
+    const product = await catalogGet(line.product_id);
     if (!product) throw new Error(`Product missing: ${line.product_id}`);
     if (product.stock_quantity < line.quantity) {
       throw new Error(`Insufficient stock for ${product.name}`);
     }
-    await localDb.products.update(line.product_id, {
+    await catalogUpdate(line.product_id, {
       stock_quantity: product.stock_quantity - line.quantity,
       updated_at: new Date().toISOString(),
     });
@@ -105,6 +107,7 @@ export async function completeSale({
 
   await localDb.invoices.put(invoice);
   await localDb.invoice_items.bulkPut(items);
+  await invalidateOwnerAggregates();
 
   if (paymentMethod === "CREDIT" && customerId) {
     const customer = await localDb.customers.get(customerId);
@@ -417,7 +420,7 @@ export async function loadInvoiceDetails(invoiceId) {
     .where("invoice_id")
     .equals(invoiceId)
     .toArray();
-  const products = await localDb.products.toArray();
+  const products = await catalogGetMany(items.map((it) => it.product_id));
   const productMap = new Map(products.map((p) => [p.id, p]));
   const lines = items.map((item) => ({
     ...item,

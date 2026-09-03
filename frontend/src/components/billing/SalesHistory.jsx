@@ -9,8 +9,8 @@ import {
   cleanupDuplicateInvoices,
   dedupeInvoiceList,
   loadInvoiceDetails,
-  syncInvoicesFromServer,
 } from "../../lib/sales";
+import { syncCustomersIfNeeded, syncInvoicesIfNeeded } from "../../lib/hybridSync";
 import { SalesInvoiceDocument } from "../documents/SalesInvoiceDocument";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -39,30 +39,32 @@ export function SalesHistory() {
   const [shop, setShop] = useState(null);
   const [reprint, setReprint] = useState(null);
 
-  const load = useCallback(async () => {
+  const readLocal = useCallback(async () => {
+    const rows = dedupeInvoiceList(
+      await localDb.invoices.orderBy("created_at").reverse().toArray(),
+    );
+    const custs = await localDb.customers.toArray();
+    setCustomers(new Map(custs.map((c) => [c.id, c])));
+    setInvoices(rows);
+    const s = await localDb.shop_settings.get("default");
+    setShop(s);
+  }, []);
+
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const rows = dedupeInvoiceList(
-        await localDb.invoices.orderBy("created_at").reverse().toArray(),
-      );
-      const custs = await localDb.customers.toArray();
-      setCustomers(new Map(custs.map((c) => [c.id, c])));
-      setInvoices(rows);
-      const s = await localDb.shop_settings.get("default");
-      setShop(s);
-      await syncInvoicesFromServer();
+      await readLocal();
+      await syncInvoicesIfNeeded(force);
+      await syncCustomersIfNeeded(force);
       await cleanupDuplicateInvoices();
-      const refreshed = dedupeInvoiceList(
-        await localDb.invoices.orderBy("created_at").reverse().toArray(),
-      );
-      setInvoices(refreshed);
+      await readLocal();
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [readLocal]);
 
   useEffect(() => {
-    load();
+    load(false);
   }, [load]);
 
   const today = businessDateIST();
@@ -117,7 +119,11 @@ export function SalesHistory() {
         title="Customer bills"
         description="View bills, download PDF or Excel, or reprint receipt"
       >
-        <Button variant="secondary" onClick={load} className="w-full shrink-0 sm:w-auto">
+        <Button
+          variant="secondary"
+          onClick={() => load(true)}
+          className="w-full shrink-0 sm:w-auto"
+        >
           <RefreshCw className="mr-2 inline h-4 w-4" />
           Refresh
         </Button>

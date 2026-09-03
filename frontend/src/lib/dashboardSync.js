@@ -1,24 +1,15 @@
 import { localDb } from "../db/localDb";
 import { supabase } from "./supabaseClient";
-import { fetchAllFromSupabase } from "./supabaseFetch";
-import { buildSearchIndex } from "../hooks/useSync";
+import { isOnline } from "./network";
+import { hydrateProducts } from "./productHydrate";
 import { syncInvoicesFromServer } from "./sales";
 import { syncPurchaseInvoicesFromServer } from "./purchases";
-import { isOnline } from "./network";
 
-/** Pull live data from Supabase into local DB for dashboard KPIs. */
+/** Pull live data for dashboard — products via delta hydrate, not a full dump. */
 export async function syncDashboardData() {
   if (!supabase || !isOnline()) return;
 
-  const products = await fetchAllFromSupabase("products");
-  await localDb.products.clear();
-  if (products.length) {
-    await localDb.products.bulkPut(products);
-    buildSearchIndex(products);
-  } else {
-    buildSearchIndex([]);
-  }
-
+  await hydrateProducts();
   await syncInvoicesFromServer(500);
   await syncPurchaseInvoicesFromServer(200);
 

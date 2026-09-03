@@ -11,7 +11,10 @@ import { Input, Label, Select } from "../ui/Input";
 import { Card } from "../ui/Card";
 import { Modal } from "../ui/Modal";
 import { formatInr, toNum } from "../../lib/format";
-import { buildSearchIndex } from "../../hooks/useSync";
+import { catalogGetByPart, catalogPut } from "../../db/catalogSqlite";
+import { upsertSearchProduct } from "../../lib/searchClient";
+import { hydrateProducts } from "../../lib/productHydrate";
+import { FreshKeys, invalidateFresh, markFresh } from "../../lib/freshSync";
 import { businessDateIST } from "../../lib/businessDay";
 import { PurchaseInvoiceHistory } from "./PurchaseInvoiceHistory";
 import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
@@ -124,10 +127,7 @@ export function PurchaseEntry({ profile, isOwner }) {
       const lineCheck = totalsCheck?.lineChecks?.[activeIdx];
       const expected = lineCheck?.expected;
 
-      let product = await localDb.products
-        .where("part_number")
-        .equals(l.part_number.trim().toUpperCase())
-        .first();
+      let product = await catalogGetByPart(l.part_number.trim().toUpperCase());
       if (!product) {
         const sell =
           toNum(l.mrp) > 0 ? toNum(l.mrp) : inward > 0 ? inward * 1.15 : 0;
@@ -151,7 +151,8 @@ export function PurchaseEntry({ profile, isOwner }) {
             .single();
           product = data;
         }
-        await localDb.products.put(product);
+        await catalogPut(product);
+        upsertSearchProduct(product);
       }
 
       const oldCost = Number(product.purchase_price) || 0;
@@ -212,8 +213,9 @@ export function PurchaseEntry({ profile, isOwner }) {
     setPrintedSgst("");
     setPrintedGrandTotal("");
     setHistoryKey((k) => k + 1);
-    const all = await localDb.products.toArray();
-    buildSearchIndex(all);
+    await hydrateProducts();
+    await markFresh(FreshKeys.PRODUCTS);
+    await invalidateFresh(FreshKeys.PURCHASES, FreshKeys.DASHBOARD);
   }
 
   return (

@@ -7,12 +7,16 @@ import {
   Wallet,
 } from "lucide-react";
 import { localDb } from "../../db/localDb";
-import { formatInr } from "../../lib/format";
+import { formatInr, toNum } from "../../lib/format";
 import { businessDateIST, formatDateIST } from "../../lib/businessDay";
-import { syncAllInvoicesFromServer } from "../../lib/sales";
-import { syncAllExpensesFromServer } from "../../lib/register";
-import { syncFixedCostsFromServer, sumDailyExpensesInRange, sumFixedExpensesInRange } from "../../lib/expenses";
+import { sumDailyExpensesInRange, sumFixedExpensesInRange } from "../../lib/expenses";
 import { isOnline } from "../../lib/network";
+import {
+  getReportBundleCached,
+  syncExpensesIfNeeded,
+  syncFixedCostsIfNeeded,
+  syncInvoicesIfNeeded,
+} from "../../lib/hybridSync";
 import {
   aggregateExpenses,
   aggregateSales,
@@ -66,37 +70,36 @@ export function SalesReports() {
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [fixedLogs, setFixedLogs] = useState([]);
-  const [invoiceItems, setInvoiceItems] = useState([]);
-  const [products, setProducts] = useState([]);
+  const [rpcBundle, setRpcBundle] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rangeStart, setRangeStart] = useState(monthRange.start);
   const [rangeEnd, setRangeEnd] = useState(today);
 
-  const load = useCallback(async () => {
+  const readLocal = useCallback(async () => {
+    setInvoices(await localDb.invoices.toArray());
+    setExpenses(await localDb.cash_expenses.toArray());
+    setFixedLogs(await localDb.fixed_cost_logs.toArray());
+  }, []);
+
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError("");
     try {
-      const rows = await localDb.invoices.toArray();
-      const exps = await localDb.cash_expenses.toArray();
-      const items = await localDb.invoice_items.toArray();
-      const prods = await localDb.products.toArray();
-      const fLogs = await localDb.fixed_cost_logs.toArray();
-      setInvoices(rows);
-      setExpenses(exps);
-      setInvoiceItems(items);
-      setProducts(prods);
-      setFixedLogs(fLogs);
+      await readLocal();
 
       if (isOnline()) {
-        await syncAllInvoicesFromServer();
-        await syncAllExpensesFromServer();
-        await syncFixedCostsFromServer();
-        setInvoices(await localDb.invoices.toArray());
-        setExpenses(await localDb.cash_expenses.toArray());
-        setInvoiceItems(await localDb.invoice_items.toArray());
-        setProducts(await localDb.products.toArray());
-        setFixedLogs(await localDb.fixed_cost_logs.toArray());
+        await syncInvoicesIfNeeded(force, { all: true });
+        await syncExpensesIfNeeded(force);
+        await syncFixedCostsIfNeeded(force);
+        await readLocal();
+        try {
+          const { data } = await getReportBundleCached(rangeStart, rangeEnd, force);
+          setRpcBundle(data);
+        } catch (rpcErr) {
+          console.warn("Report RPC failed", rpcErr);
+          setRpcBundle(null);
+        }
       }
     } catch (err) {
       setError(
@@ -104,33 +107,15 @@ export function SalesReports() {
           ? err.message || "Could not load report data."
           : "Offline — showing saved local data.",
       );
-      const rows = await localDb.invoices.toArray();
-      const exps = await localDb.cash_expenses.toArray();
-      setInvoices(rows);
-      setExpenses(exps);
-      setInvoiceItems(await localDb.invoice_items.toArray());
-      setProducts(await localDb.products.toArray());
-      setFixedLogs(await localDb.fixed_cost_logs.toArray());
+      await readLocal();
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [rangeStart, rangeEnd, readLocal]);
 
   useEffect(() => {
-    load();
+    load(false);
   }, [load]);
-
-  // Cost of goods sold: for each invoice item, look up purchase_price * qty
-  const cogsByInvoice = useMemo(() => {
-    const productMap = new Map(products.map((p) => [p.id, p]));
-    const map = new Map();
-    for (const item of invoiceItems) {
-      const p = productMap.get(item.product_id);
-      const cost = (p?.purchase_price ?? 0) * (item.quantity ?? 0);
-      map.set(item.invoice_id, (map.get(item.invoice_id) ?? 0) + cost);
-    }
-    return map;
-  }, [invoiceItems, products]);
 
   const stats = useMemo(() => {
     const allTimeSales = aggregateSales(invoices);
@@ -210,8 +195,8 @@ export function SalesReports() {
       ),
     );
 
-    const dailySales = buildDailySalesSeries(invoices, rangeStart, rangeEnd);
-    const dailyExpenses = buildDailyExpenseSeries(expenses, rangeStart, rangeEnd);
+    const dailySales = rpcBundle?.dailySales || buildDailySalesSeries(invoices, rangeStart, rangeEnd);
+    const dailyExpenses = rpcBundle?.dailyExpenses || buildDailyExpenseSeries(expenses, rangeStart, rangeEnd);
 
     return {
       allTimeSales,
@@ -234,21 +219,22 @@ export function SalesReports() {
       dailyExpenses,
 
       // P&L for the custom range
-      plRevenue: customRangeSales.revenue,
-      plCogs: (() => {
-        const inv = filterInvoicesByDateRange(invoices, rangeStart, rangeEnd);
-        let cogs = 0;
-        for (const i of inv) cogs += cogsByInvoice.get(i.id) ?? 0;
-        return cogs;
-      })(),
-      plDailyExpenses: sumDailyExpensesInRange(expenses, rangeStart, rangeEnd),
-      plFixedExpenses: sumFixedExpensesInRange(fixedLogs, rangeStart, rangeEnd),
+      plRevenue: rpcBundle?.rangeSales
+        ? toNum(rpcBundle.rangeSales.revenue)
+        : customRangeSales.revenue,
+      plCogs: rpcBundle ? toNum(rpcBundle.rangeCogs) : 0,
+      plDailyExpenses: rpcBundle
+        ? toNum(rpcBundle.rangeExpenses)
+        : sumDailyExpensesInRange(expenses, rangeStart, rangeEnd),
+      plFixedExpenses: rpcBundle
+        ? toNum(rpcBundle.rangeFixed)
+        : sumFixedExpensesInRange(fixedLogs, rangeStart, rangeEnd),
     };
   }, [
     invoices,
     expenses,
     fixedLogs,
-    cogsByInvoice,
+    rpcBundle,
     monthRange.start,
     monthRange.end,
     rangeStart,
@@ -261,7 +247,11 @@ export function SalesReports() {
         title="Sales reports"
         description="Visual overview · sales, expenses, comparisons (IST)"
       >
-        <Button variant="secondary" className="w-full text-xs sm:w-auto" onClick={load}>
+        <Button
+          variant="secondary"
+          className="w-full text-xs sm:w-auto"
+          onClick={() => load(true)}
+        >
           <RefreshCw className="mr-1.5 inline h-3.5 w-3.5" />
           Refresh
         </Button>

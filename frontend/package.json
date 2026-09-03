@@ -21,6 +21,7 @@
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
     "recharts": "^3.10.1",
+    "sql.js": "^1.14.2",
     "tailwind-merge": "^3.6.0",
     "xlsx": "^0.18.5"
   },

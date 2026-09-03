@@ -1,4 +1,6 @@
 import { localDb } from "../db/localDb";
+import { catalogGet, catalogGetByPart, catalogPut, catalogUpdate } from "../db/catalogSqlite";
+import { upsertSearchProduct } from "./searchClient";
 import { supabase } from "./supabaseClient";
 import { fetchAllFromSupabase } from "./supabaseFetch";
 import { toNum, round2 } from "./format";
@@ -19,7 +21,7 @@ export async function applyProductBrand(productId, brand) {
   const b = brand?.trim();
   if (!b || !productId) return;
   const updated_at = new Date().toISOString();
-  await localDb.products.update(productId, { brand: b, updated_at });
+  await catalogUpdate(productId, { brand: b, updated_at });
   if (supabase && navigator.onLine) {
     await supabase
       .from("products")
@@ -30,7 +32,10 @@ export async function applyProductBrand(productId, brand) {
       .select("*")
       .eq("id", productId)
       .single();
-    if (data) await localDb.products.put(data);
+    if (data) {
+      await catalogPut(data);
+      upsertSearchProduct(data);
+    }
   }
 }
 
@@ -38,7 +43,7 @@ export async function setSellingPriceFromMrp(productId, mrp) {
   const sell = toNum(mrp);
   if (sell <= 0) return;
   const updated_at = new Date().toISOString();
-  await localDb.products.update(productId, {
+  await catalogUpdate(productId, {
     selling_price: sell,
     updated_at,
   });
@@ -52,7 +57,10 @@ export async function setSellingPriceFromMrp(productId, mrp) {
       .select("*")
       .eq("id", productId)
       .single();
-    if (data) await localDb.products.put(data);
+    if (data) {
+      await catalogPut(data);
+      upsertSearchProduct(data);
+    }
   }
 }
 
@@ -268,15 +276,20 @@ export async function postPurchaseLine({
         .select("*")
         .eq("id", productId)
         .single();
-      if (data) await localDb.products.put(data);
+      if (data) {
+        await catalogPut(data);
+        upsertSearchProduct(data);
+      }
     } else {
-      const p = await localDb.products.get(productId);
+      const p = await catalogGet(productId);
       if (p) {
-        await localDb.products.update(productId, {
+        await catalogUpdate(productId, {
           stock_quantity: toNum(p.stock_quantity) + quantity,
           purchase_price: applyCost ? unitCost : p.purchase_price,
           updated_at: new Date().toISOString(),
         });
+        const updated = await catalogGet(productId);
+        if (updated) upsertSearchProduct(updated);
       }
     }
     await applyProductBrand(productId, brand);
