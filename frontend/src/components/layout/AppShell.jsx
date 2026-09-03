@@ -58,11 +58,7 @@ export function AppShell({
       />
 
       <header className="no-print sticky top-0 z-30 border-b border-ash bg-canvas">
-        <div
-          className={`mx-auto flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 ${
-            isPos ? "max-w-none" : "max-w-7xl"
-          }`}
-        >
+        <div className="mx-auto flex w-full max-w-none items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
           <MobileMenuButton
             open={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
@@ -127,10 +123,10 @@ export function AppShell({
       </header>
 
       <main
-        className={`no-print mx-auto w-full flex-1 ${
+        className={`no-print w-full flex-1 ${
           location.pathname.startsWith("/pos")
             ? "max-w-none px-0 py-0"
-            : "max-w-7xl px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4 sm:py-6"
+            : "max-w-none px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4 sm:py-6 lg:px-6"
         }`}
       >
         {children}

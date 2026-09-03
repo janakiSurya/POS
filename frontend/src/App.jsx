@@ -61,12 +61,21 @@ function ProtectedApp({ profile, isOwner, signOut }) {
     );
   }
 
-  // Only block the user with the "Start daily shift" modal when they
-  // are trying to use the counter (/pos). Owner should still be able
-  // to browse dashboard/reports even if the shift is closed.
-  if (needOpen && !session && location.pathname.startsWith("/pos")) {
+  // Staff must open a shift before using the app. Owners keep the
+  // dashboard/nav and only start a shift when they open POS.
+  if (!isOwner && needOpen && !session) {
+    if (!location.pathname.startsWith("/pos")) {
+      return <Navigate to="/pos" replace />;
+    }
     return (
-      <OpenShiftModal open userId={profile.id} onDone={() => refreshSession()} />
+      <OpenShiftModal
+        open
+        userId={profile.id}
+        shopName={shopName}
+        profileName={profile.full_name}
+        onSignOut={signOut}
+        onDone={() => refreshSession()}
+      />
     );
   }
 
@@ -93,9 +102,14 @@ function ProtectedApp({ profile, isOwner, signOut }) {
               session?.status === "OPEN" ? (
                 <POSBilling session={session} profile={profile} isOwner={isOwner} />
               ) : (
-                <div className="p-6 text-center text-fog">
-                  Shift is closed for today. Open a new shift to bill.
-                </div>
+                <OpenShiftModal
+                  open
+                  embedded
+                  userId={profile.id}
+                  shopName={shopName}
+                  profileName={profile.full_name}
+                  onDone={() => refreshSession()}
+                />
               )
             }
           />
