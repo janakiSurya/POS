@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import { useSync } from "./hooks/useSync";
 import { LoginForm } from "./components/auth/LoginForm";
@@ -14,6 +14,7 @@ import { SalesReports } from "./components/reports/SalesReports";
 import { InventoryList } from "./components/inventory/InventoryList";
 import { PurchaseEntry } from "./components/inventory/PurchaseEntry";
 import { ExcelImport } from "./components/inventory/ExcelImport";
+import { ExpensesPage } from "./components/expenses/ExpensesPage";
 import { getTodayOpenSession } from "./lib/register";
 import { DEMO_PROFILE, seedDemoData } from "./lib/demo";
 import { flushOfflineQueue } from "./lib/offlineFlush";
@@ -28,6 +29,7 @@ function ProtectedApp({ profile, isOwner, signOut }) {
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [shopName, setShopName] = useState("");
 
+  const location = useLocation();
   const { online } = useSync(Boolean(profile));
 
   const refreshSession = useCallback(async () => {
@@ -59,7 +61,10 @@ function ProtectedApp({ profile, isOwner, signOut }) {
     );
   }
 
-  if (needOpen && !session) {
+  // Only block the user with the "Start daily shift" modal when they
+  // are trying to use the counter (/pos). Owner should still be able
+  // to browse dashboard/reports even if the shift is closed.
+  if (needOpen && !session && location.pathname.startsWith("/pos")) {
     return (
       <OpenShiftModal open userId={profile.id} onDone={() => refreshSession()} />
     );
@@ -87,8 +92,6 @@ function ProtectedApp({ profile, isOwner, signOut }) {
             element={
               session?.status === "OPEN" ? (
                 <POSBilling session={session} profile={profile} isOwner={isOwner} />
-              ) : needOpen ? (
-                <Navigate to="/" replace />
               ) : (
                 <div className="p-6 text-center text-fog">
                   Shift is closed for today. Open a new shift to bill.
@@ -112,6 +115,10 @@ function ProtectedApp({ profile, isOwner, signOut }) {
               <Route
                 path="/import"
                 element={<ExcelImport profile={profile} isOwner />}
+              />
+              <Route
+                path="/expenses"
+                element={<ExpensesPage userId={profile.id} />}
               />
             </>
           ) : null}

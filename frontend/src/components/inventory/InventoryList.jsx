@@ -366,22 +366,23 @@ export function InventoryList() {
         ) : null}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-xl border border-ash lg:block">
+      <div className="hidden rounded-xl border border-ash lg:block">
+        <div className="max-h-[70vh] overflow-auto">
         <table className="w-full min-w-[1100px] text-left text-sm">
-          <thead className="bg-canvas text-xs text-fog">
+          <thead className="sticky top-0 z-10 bg-canvas text-xs text-fog shadow-[0_1px_0_0_#e5e5e5]">
             <tr>
-              <th className="px-3 py-2">Code</th>
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Category</th>
-              <th className="px-3 py-2">Brand</th>
-              <th className="px-3 py-2">UOM</th>
-              <th className="px-3 py-2 text-right">Stock</th>
-              <th className="px-3 py-2 text-right">Min</th>
-              <th className="px-3 py-2">Rack</th>
-              <th className="px-3 py-2">Vehicles</th>
-              <th className="px-3 py-2 text-right">Cost</th>
-              <th className="px-3 py-2 text-right">Sell</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-2.5 font-semibold">Code</th>
+              <th className="px-3 py-2.5 font-semibold">Name</th>
+              <th className="px-3 py-2.5 font-semibold">Category</th>
+              <th className="px-3 py-2.5 font-semibold">Brand</th>
+              <th className="px-3 py-2.5 font-semibold">UOM</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Stock</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Min</th>
+              <th className="px-3 py-2.5 font-semibold">Rack</th>
+              <th className="px-3 py-2.5 font-semibold">Vehicles</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Cost</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Sell</th>
+              <th className="px-3 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
@@ -449,6 +450,7 @@ export function InventoryList() {
             Showing {filtered.length} of {products.length} parts
           </p>
         ) : null}
+        </div>
       </div>
     </div>
   );

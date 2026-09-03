@@ -132,13 +132,14 @@ export async function computeExpectedTotals(sessionId) {
   return { cash: round(expectedCash), upi: round(expectedUpi), cashSales, upiSales, cashExpenses };
 }
 
-export async function addExpense({ sessionId, userId, amount, note }) {
+export async function addExpense({ sessionId, userId, amount, note, category = "MISC" }) {
   const row = {
     id: crypto.randomUUID(),
     session_id: sessionId,
     user_id: userId,
     amount: toNum(amount),
     note: note || "",
+    category,
     created_at: new Date().toISOString(),
   };
 
@@ -150,6 +151,7 @@ export async function addExpense({ sessionId, userId, amount, note }) {
         user_id: userId,
         amount: row.amount,
         note: row.note,
+        category: row.category,
       })
       .select()
       .single();

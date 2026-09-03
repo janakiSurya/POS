@@ -364,3 +364,64 @@ export function NetCompareChart({ thisMonth, prevMonth, thisLabel, prevLabel }) 
     </ResponsiveContainer>
   );
 }
+
+/** P&L breakdown: Revenue, Cost, Daily Expenses, Fixed Expenses, Net Profit as grouped bars */
+export function ProfitBreakdownChart({ revenue, costOfGoods, dailyExpenses, fixedExpenses, netProfit }) {
+  const data = [
+    {
+      label: "Revenue",
+      value: toNum(revenue),
+      fill: "#2563eb",
+    },
+    {
+      label: "Cost of goods",
+      value: toNum(costOfGoods),
+      fill: "#f59e0b",
+    },
+    {
+      label: "Daily expenses",
+      value: toNum(dailyExpenses),
+      fill: "#ea580c",
+    },
+    {
+      label: "Fixed expenses",
+      value: toNum(fixedExpenses),
+      fill: "#7c3aed",
+    },
+    {
+      label: "Net profit",
+      value: toNum(netProfit),
+      fill: netProfit >= 0 ? "#16a34a" : "#ef4444",
+    },
+  ];
+
+  return (
+    <ResponsiveContainer width="100%" height={window.innerWidth < 640 ? 220 : 260}>
+      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
+        <XAxis
+          dataKey="label"
+          tick={{ fill: CHART_TICK, fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          tick={{ fill: CHART_TICK, fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={formatShortInr}
+          width={58}
+        />
+        <Tooltip
+          content={<ChartTooltip valueFormatter={(v) => formatInr(v)} />}
+          cursor={{ fill: "rgba(0,0,0,0.04)" }}
+        />
+        <Bar dataKey="value" name="Amount" radius={[6, 6, 0, 0]} maxBarSize={64}>
+          {data.map((entry) => (
+            <Cell key={entry.label} fill={entry.fill} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}

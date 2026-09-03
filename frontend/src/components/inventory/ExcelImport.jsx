@@ -580,18 +580,18 @@ export function ExcelImport({ profile, isOwner }) {
           ) : null}
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[960px] text-left text-sm">
-              <thead className="text-fog">
+              <thead className="sticky top-0 z-10 bg-canvas text-fog shadow-[0_1px_0_0_#e5e5e5]">
                 <tr>
-                  <th className="px-2 py-1">Code</th>
-                  <th className="px-2 py-1">Description</th>
-                  <th className="px-2 py-1">Brand</th>
-                  <th className="px-2 py-1 text-right">Qty</th>
-                  <th className="px-2 py-1 text-right">UOM</th>
-                  <th className="px-2 py-1 text-right">MRP</th>
-                  <th className="px-2 py-1 text-right">Cost</th>
-                  <th className="px-2 py-1 text-right">Disc %</th>
-                  <th className="px-2 py-1 text-right">Taxable</th>
-                  <th className="px-2 py-1 text-right">Total</th>
+                  <th className="px-2 py-1.5 font-semibold">Code</th>
+                  <th className="px-2 py-1.5 font-semibold">Description</th>
+                  <th className="px-2 py-1.5 font-semibold">Brand</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">Qty</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">UOM</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">MRP</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">Cost</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">Disc %</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">Taxable</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">Total</th>
                 </tr>
               </thead>
               <tbody>

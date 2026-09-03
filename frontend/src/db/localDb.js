@@ -26,6 +26,11 @@ localDb.version(3).stores({
   day_close_reports: "id, session_id, business_date, created_at",
 });
 
+localDb.version(4).stores({
+  fixed_cost_templates: "id, active",
+  fixed_cost_logs: "id, template_id, month",
+});
+
 export async function getSyncMeta(key) {
   const row = await localDb.sync_meta.get(key);
   return row?.value ?? null;

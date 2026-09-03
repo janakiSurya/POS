@@ -110,7 +110,7 @@ export function PurchaseInvoiceDocument({
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-paper/[0.06] text-[11px] font-semibold uppercase tracking-wide text-silver">
+            <thead className="sticky top-0 z-10 bg-[#f0f4fa] text-[11px] font-semibold uppercase tracking-wide text-silver shadow-[0_1px_0_0_#e5e5e5]">
               <tr>
                 <th className="px-3 py-2.5">#</th>
                 <th className="px-3 py-2.5">Part no.</th>

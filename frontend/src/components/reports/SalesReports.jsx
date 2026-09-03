@@ -11,6 +11,7 @@ import { formatInr } from "../../lib/format";
 import { businessDateIST, formatDateIST } from "../../lib/businessDay";
 import { syncAllInvoicesFromServer } from "../../lib/sales";
 import { syncAllExpensesFromServer } from "../../lib/register";
+import { syncFixedCostsFromServer, sumDailyExpensesInRange, sumFixedExpensesInRange } from "../../lib/expenses";
 import { isOnline } from "../../lib/network";
 import {
   aggregateExpenses,
@@ -33,6 +34,7 @@ import {
   NetCompareChart,
   PaymentMixChart,
   PeriodCompareChart,
+  ProfitBreakdownChart,
 } from "./ReportCharts";
 import { KpiCard, Card } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -63,6 +65,9 @@ export function SalesReports() {
 
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [fixedLogs, setFixedLogs] = useState([]);
+  const [invoiceItems, setInvoiceItems] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rangeStart, setRangeStart] = useState(monthRange.start);
@@ -74,14 +79,24 @@ export function SalesReports() {
     try {
       const rows = await localDb.invoices.toArray();
       const exps = await localDb.cash_expenses.toArray();
+      const items = await localDb.invoice_items.toArray();
+      const prods = await localDb.products.toArray();
+      const fLogs = await localDb.fixed_cost_logs.toArray();
       setInvoices(rows);
       setExpenses(exps);
+      setInvoiceItems(items);
+      setProducts(prods);
+      setFixedLogs(fLogs);
 
       if (isOnline()) {
         await syncAllInvoicesFromServer();
         await syncAllExpensesFromServer();
+        await syncFixedCostsFromServer();
         setInvoices(await localDb.invoices.toArray());
         setExpenses(await localDb.cash_expenses.toArray());
+        setInvoiceItems(await localDb.invoice_items.toArray());
+        setProducts(await localDb.products.toArray());
+        setFixedLogs(await localDb.fixed_cost_logs.toArray());
       }
     } catch (err) {
       setError(
@@ -93,6 +108,9 @@ export function SalesReports() {
       const exps = await localDb.cash_expenses.toArray();
       setInvoices(rows);
       setExpenses(exps);
+      setInvoiceItems(await localDb.invoice_items.toArray());
+      setProducts(await localDb.products.toArray());
+      setFixedLogs(await localDb.fixed_cost_logs.toArray());
     } finally {
       setLoading(false);
     }
@@ -101,6 +119,18 @@ export function SalesReports() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Cost of goods sold: for each invoice item, look up purchase_price * qty
+  const cogsByInvoice = useMemo(() => {
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const map = new Map();
+    for (const item of invoiceItems) {
+      const p = productMap.get(item.product_id);
+      const cost = (p?.purchase_price ?? 0) * (item.quantity ?? 0);
+      map.set(item.invoice_id, (map.get(item.invoice_id) ?? 0) + cost);
+    }
+    return map;
+  }, [invoiceItems, products]);
 
   const stats = useMemo(() => {
     const allTimeSales = aggregateSales(invoices);
@@ -202,10 +232,23 @@ export function SalesReports() {
       netCustomRange: customRangeSales.revenue - customRangeExpenses.total,
       dailySales,
       dailyExpenses,
+
+      // P&L for the custom range
+      plRevenue: customRangeSales.revenue,
+      plCogs: (() => {
+        const inv = filterInvoicesByDateRange(invoices, rangeStart, rangeEnd);
+        let cogs = 0;
+        for (const i of inv) cogs += cogsByInvoice.get(i.id) ?? 0;
+        return cogs;
+      })(),
+      plDailyExpenses: sumDailyExpensesInRange(expenses, rangeStart, rangeEnd),
+      plFixedExpenses: sumFixedExpensesInRange(fixedLogs, rangeStart, rangeEnd),
     };
   }, [
     invoices,
     expenses,
+    fixedLogs,
+    cogsByInvoice,
     monthRange.start,
     monthRange.end,
     rangeStart,
@@ -260,6 +303,51 @@ export function SalesReports() {
           accent="neutral"
         />
       </div>
+
+      {/* P&L section */}
+      {(() => {
+        const grossProfit = stats.plRevenue - stats.plCogs;
+        const netProfit = grossProfit - stats.plDailyExpenses - stats.plFixedExpenses;
+        return (
+          <Card>
+            <div className="mb-4 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-fog" />
+              <h2 className="font-semibold text-ink">Profit &amp; Loss — {formatRangeLabel(rangeStart, rangeEnd)}</h2>
+            </div>
+            <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {[
+                { label: "Revenue", value: stats.plRevenue, color: "text-electric" },
+                { label: "Cost of goods", value: stats.plCogs, color: "text-warning" },
+                { label: "Daily expenses", value: stats.plDailyExpenses, color: "text-fog" },
+                { label: "Fixed expenses", value: stats.plFixedExpenses, color: "text-fog" },
+                {
+                  label: "Net profit",
+                  value: netProfit,
+                  color: netProfit >= 0 ? "text-success" : "text-danger",
+                  big: true,
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className={`rounded-xl border ${item.big ? (netProfit >= 0 ? "border-success/30 bg-success/5" : "border-danger/30 bg-danger/5") : "border-ash bg-canvas"} px-3 py-3`}
+                >
+                  <p className="text-[11px] uppercase tracking-wide text-silver">{item.label}</p>
+                  <p className={`mt-1 text-lg font-bold tabular-nums ${item.color} sm:text-xl`}>
+                    {formatInr(item.value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <ProfitBreakdownChart
+              revenue={stats.plRevenue}
+              costOfGoods={stats.plCogs}
+              dailyExpenses={stats.plDailyExpenses}
+              fixedExpenses={stats.plFixedExpenses}
+              netProfit={netProfit}
+            />
+          </Card>
+        );
+      })()}
 
       {/* Custom date range + charts */}
       <Card>

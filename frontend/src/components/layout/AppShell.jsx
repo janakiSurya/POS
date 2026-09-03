@@ -11,6 +11,7 @@ const staffLinks = [
 const ownerLinks = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/reports", label: "Reports" },
+  { to: "/expenses", label: "Expenses" },
   { to: "/inventory", label: "Inventory" },
   { to: "/purchases", label: "Purchases" },
   { to: "/import", label: "Excel import" },
