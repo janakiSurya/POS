@@ -1,3 +1,6 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { RefreshCw, FileDown } from "lucide-react";
 import {
   listDayCloseReports,
   syncDayCloseReportsFromServer,
@@ -8,6 +11,10 @@ import {
   getDashboardKpisCached,
   syncDashboardSupportIfNeeded,
 } from "../../lib/hybridSync";
+import {
+  getMoneyOverview,
+  syncMoneyFromServer,
+} from "../../lib/bank";
 import { KpiCard, Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { PageHeader } from "../shared/PageHeader";
@@ -16,8 +23,6 @@ import { catalogCount, catalogPage, initCatalog } from "../../db/catalogSqlite";
 import { supabase } from "../../lib/supabaseClient";
 import { formatInr, formatQty, toNum } from "../../lib/format";
 import { businessDateIST } from "../../lib/businessDay";
-import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, FileDown } from "lucide-react";
 
 export function Dashboard() {
   const [kpis, setKpis] = useState({
@@ -36,6 +41,7 @@ export function Dashboard() {
   const [dayReports, setDayReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState("");
+  const [moneyHint, setMoneyHint] = useState(null);
 
   const applyRpc = useCallback((rpc) => {
     setKpis({
@@ -147,6 +153,13 @@ export function Dashboard() {
 
       const reports = await listDayCloseReports(30);
       setDayReports(reports);
+
+      try {
+        if (supabase && isOnline()) await syncMoneyFromServer();
+        setMoneyHint(await getMoneyOverview());
+      } catch {
+        setMoneyHint(null);
+      }
     } catch (err) {
       setSyncError(err.message || "Could not sync dashboard data.");
     } finally {
@@ -178,6 +191,37 @@ export function Dashboard() {
         <p className="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
           {syncError}
         </p>
+      ) : null}
+
+      {moneyHint &&
+      (moneyHint.undepositedCash > 0 ||
+        moneyHint.upiPendingTotal > 0 ||
+        moneyHint.loanOutstanding > 0) ? (
+        <Card className="border-l-4 border-l-action">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold text-ink">Money</p>
+              <p className="mt-1 text-sm text-fog">
+                Bank {formatInr(moneyHint.bankBalance)}
+                {moneyHint.undepositedCash > 0
+                  ? ` · undeposited cash ${formatInr(moneyHint.undepositedCash)}`
+                  : ""}
+                {moneyHint.upiPendingTotal > 0
+                  ? ` · UPI to confirm ${formatInr(moneyHint.upiPendingTotal)}`
+                  : ""}
+                {moneyHint.loanOutstanding > 0
+                  ? ` · loans owed ${formatInr(moneyHint.loanOutstanding)}`
+                  : ""}
+              </p>
+            </div>
+            <Link
+              to="/money"
+              className="inline-flex items-center justify-center rounded-lg bg-action px-3 py-2 text-xs font-medium text-canvas"
+            >
+              Open Money
+            </Link>
+          </div>
+        </Card>
       ) : null}
 
       {loading ? (
@@ -232,7 +276,7 @@ export function Dashboard() {
       <Card>
         <h2 className="mb-3 font-semibold text-ink">Saved end-of-day reports</h2>
         <p className="mb-4 text-sm text-fog">
-          PDF summaries saved when the shift is closed each day.
+          PDF summaries saved when the session is ended (updated if ended again the same day).
         </p>
         {dayReports.length ? (
           <>
@@ -252,16 +296,8 @@ export function Dashboard() {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-fog">
                       <span>{r?.bill_count ?? "—"} bills</span>
-                      <span
-                        className={
-                          toNum(r?.cash_variance) !== 0 ? "text-warning" : ""
-                        }
-                      >
-                        Cash var.{" "}
-                        {r?.cash_variance != null
-                          ? formatInr(r.cash_variance)
-                          : "—"}
-                      </span>
+                      <span>Cash {formatInr(r?.expected_cash)}</span>
+                      <span>UPI {formatInr(r?.expected_upi)}</span>
                     </div>
                     <Button
                       variant="secondary"
@@ -282,7 +318,8 @@ export function Dashboard() {
                   <th className="pb-2 pr-3">Date</th>
                   <th className="pb-2 pr-3 text-right">Sales</th>
                   <th className="pb-2 pr-3 text-right">Bills</th>
-                  <th className="pb-2 pr-3 text-right">Cash var.</th>
+                  <th className="pb-2 pr-3 text-right">Expected cash</th>
+                  <th className="pb-2 pr-3 text-right">Expected UPI</th>
                   <th className="pb-2 text-right">PDF</th>
                 </tr>
               </thead>
@@ -298,12 +335,11 @@ export function Dashboard() {
                       <td className="py-2 pr-3 text-right tabular-nums">
                         {r?.bill_count ?? "—"}
                       </td>
-                      <td
-                        className={`py-2 pr-3 text-right tabular-nums ${
-                          toNum(r?.cash_variance) !== 0 ? "text-warning" : ""
-                        }`}
-                      >
-                        {r?.cash_variance != null ? formatInr(r.cash_variance) : "—"}
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {formatInr(r?.expected_cash)}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {formatInr(r?.expected_upi)}
                       </td>
                       <td className="py-2 text-right">
                         <Button
@@ -324,13 +360,13 @@ export function Dashboard() {
           </>
         ) : (
           <p className="text-sm text-silver">
-            No saved reports yet. Close the shift to generate the first PDF.
+            No saved reports yet. End a session to generate the first PDF.
           </p>
         )}
       </Card>
 
       <Card>
-        <h2 className="mb-3 font-semibold text-ink">Register audit</h2>
+        <h2 className="mb-3 font-semibold text-ink">Daily sessions</h2>
         <div className="space-y-2 md:hidden">
           {sessions.map((s) => (
             <div
@@ -342,16 +378,9 @@ export function Dashboard() {
                 <span className="text-xs text-fog">{s.status}</span>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-fog">
-                <span>Open {formatInr(s.opening_cash)}</span>
-                <span
-                  className={`text-right tabular-nums ${
-                    toNum(s.cash_variance) !== 0 ? "text-warning" : ""
-                  }`}
-                >
-                  Cash {s.cash_variance != null ? formatInr(s.cash_variance) : "—"}
-                </span>
-                <span className="col-span-2 text-right tabular-nums">
-                  UPI {s.upi_variance != null ? formatInr(s.upi_variance) : "—"}
+                <span>Expected cash {s.expected_cash != null ? formatInr(s.expected_cash) : "—"}</span>
+                <span className="text-right">
+                  Expected UPI {s.expected_upi != null ? formatInr(s.expected_upi) : "—"}
                 </span>
               </div>
             </div>
@@ -363,9 +392,8 @@ export function Dashboard() {
               <tr>
                 <th className="pb-2 pr-3">Date</th>
                 <th className="pb-2 pr-3">Status</th>
-                <th className="pb-2 pr-3 text-right">Open cash</th>
-                <th className="pb-2 pr-3 text-right">Cash var.</th>
-                <th className="pb-2 text-right">UPI var.</th>
+                <th className="pb-2 pr-3 text-right">Expected cash</th>
+                <th className="pb-2 text-right">Expected UPI</th>
               </tr>
             </thead>
             <tbody>
@@ -374,17 +402,10 @@ export function Dashboard() {
                   <td className="py-2 pr-3">{s.business_date}</td>
                   <td className="py-2 pr-3">{s.status}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">
-                    {formatInr(s.opening_cash)}
-                  </td>
-                  <td
-                    className={`py-2 pr-3 text-right tabular-nums ${
-                      toNum(s.cash_variance) !== 0 ? "text-warning" : ""
-                    }`}
-                  >
-                    {s.cash_variance != null ? formatInr(s.cash_variance) : "—"}
+                    {s.expected_cash != null ? formatInr(s.expected_cash) : "—"}
                   </td>
                   <td className="py-2 text-right tabular-nums">
-                    {s.upi_variance != null ? formatInr(s.upi_variance) : "—"}
+                    {s.expected_upi != null ? formatInr(s.expected_upi) : "—"}
                   </td>
                 </tr>
               ))}

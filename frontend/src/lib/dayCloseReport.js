@@ -2,6 +2,7 @@ import { localDb } from "../db/localDb";
 import { formatDateIST } from "./businessDay";
 import { toNum } from "./format";
 import { computeExpectedTotals } from "./register";
+import { normalizeExpensePaymentMode } from "./expenses";
 import { supabase } from "./supabaseClient";
 import { fetchAllFromSupabase } from "./supabaseFetch";
 import { isOnline } from "./network";
@@ -40,8 +41,13 @@ export async function buildSessionCloseReport(sessionId) {
       created_at: inv.created_at,
     }));
 
+  const existing = await localDb.day_close_reports
+    .where("session_id")
+    .equals(sessionId)
+    .first();
+
   return {
-    id: crypto.randomUUID(),
+    id: existing?.id || crypto.randomUUID(),
     session_id: sessionId,
     business_date: session.business_date,
     shop_name: shop?.name || "Sri Sri Satya Sai Automobile Agency",
@@ -49,23 +55,27 @@ export async function buildSessionCloseReport(sessionId) {
     shop_phone: shop?.phone || "",
     opened_at: session.opened_at,
     closed_at: session.closed_at,
-    opening_cash: toNum(session.opening_cash),
-    opening_upi: toNum(session.opening_upi),
-    closing_cash: toNum(session.closing_cash),
-    closing_upi: toNum(session.closing_upi),
-    expected_cash: toNum(session.expected_cash),
-    expected_upi: toNum(session.expected_upi),
-    cash_variance: toNum(session.cash_variance),
-    upi_variance: toNum(session.upi_variance),
+    close_reason: session.close_reason || "MANUAL",
+    opening_cash: 0,
+    opening_upi: 0,
+    closing_cash: toNum(session.closing_cash ?? totals.cash),
+    closing_upi: toNum(session.closing_upi ?? totals.upi),
+    expected_cash: toNum(session.expected_cash ?? totals.cash),
+    expected_upi: toNum(session.expected_upi ?? totals.upi),
+    cash_variance: 0,
+    upi_variance: 0,
     cash_sales: totals.cashSales ?? cashSales,
     upi_sales: totals.upiSales ?? upiSales,
     credit_sales: creditSales,
     total_sales: cashSales + upiSales + creditSales,
     bill_count: invoices.length,
     cash_expenses: totals.cashExpenses ?? 0,
+    upi_expenses: totals.upiExpenses ?? 0,
     expense_entries: expenses.map((e) => ({
       amount: toNum(e.amount),
       note: e.note || "",
+      payment_mode: normalizeExpensePaymentMode(e.payment_mode),
+      category: e.category || "MISC",
       created_at: e.created_at,
     })),
     bills,
@@ -92,6 +102,7 @@ export async function saveDayCloseReport(sessionId) {
         session_id: sessionId,
         business_date: report.business_date,
         report_json: report,
+        created_at: report.generated_at,
       },
       { onConflict: "session_id" },
     );

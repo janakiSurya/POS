@@ -142,7 +142,7 @@ export function MobileNavDrawer({
                   onCloseShift?.();
                 }}
               >
-                Close shift
+                End session
               </Button>
             </>
           ) : null}

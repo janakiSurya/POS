@@ -470,7 +470,7 @@ function formatTimeIST(createdAt) {
   });
 }
 
-/** End-of-day shift close PDF — opening/closing balances, sales, variances. */
+/** End-of-day session PDF — expected cash/UPI from bills − expenses. */
 export function downloadDayCloseReportPdf(report) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const shopName = report.shop_name || "Sri Sri Satya Sai Automobile Agency";
@@ -487,20 +487,15 @@ export function downloadDayCloseReportPdf(report) {
   );
 
   const summaryRows = [
-    ["Opening cash", `Rs. ${inrPlain(report.opening_cash)}`],
-    ["Opening UPI", `Rs. ${inrPlain(report.opening_upi)}`],
     ["Cash sales", `Rs. ${inrPlain(report.cash_sales)}`],
+    ["Cash expenses", `Rs. ${inrPlain(report.cash_expenses)}`],
+    ["Expected cash", `Rs. ${inrPlain(report.expected_cash)}`],
     ["UPI sales", `Rs. ${inrPlain(report.upi_sales)}`],
-    ["Credit sales", `Rs. ${inrPlain(report.credit_sales)}`],
+    ["UPI expenses", `Rs. ${inrPlain(report.upi_expenses)}`],
+    ["Expected UPI", `Rs. ${inrPlain(report.expected_upi)}`],
     ["Total sales", `Rs. ${inrPlain(report.total_sales)}`],
     ["Bill count", String(report.bill_count ?? 0)],
-    ["Cash expenses", `Rs. ${inrPlain(report.cash_expenses)}`],
-    ["Expected cash in drawer", `Rs. ${inrPlain(report.expected_cash)}`],
-    ["Expected UPI balance", `Rs. ${inrPlain(report.expected_upi)}`],
-    ["Counted closing cash", `Rs. ${inrPlain(report.closing_cash)}`],
-    ["Counted closing UPI", `Rs. ${inrPlain(report.closing_upi)}`],
-    ["Cash variance", `Rs. ${inrPlain(report.cash_variance)}`],
-    ["UPI variance", `Rs. ${inrPlain(report.upi_variance)}`],
+    ["Close reason", report.close_reason === "AUTO_EOD" ? "Auto (end of day)" : "Manual"],
   ];
 
   autoTable(doc, {
@@ -538,13 +533,14 @@ export function downloadDayCloseReportPdf(report) {
   if (report.expense_entries?.length) {
     y += 8;
     doc.setFontSize(11);
-    doc.text("Cash expenses", 14, y);
+    doc.text("Expenses", 14, y);
     autoTable(doc, {
       startY: y + 4,
-      head: [["Time", "Note", "Amount (Rs.)"]],
+      head: [["Time", "Mode", "Note", "Amount (Rs.)"]],
       body: report.expense_entries.map((e) => [
         formatTimeIST(e.created_at),
-        (e.note || "").slice(0, 50),
+        e.payment_mode || "CASH",
+        (e.note || "").slice(0, 40),
         inrPlain(e.amount),
       ]),
       styles: { fontSize: 8, cellPadding: 2 },

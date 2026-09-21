@@ -3,12 +3,16 @@ import { Button } from "../ui/Button";
 import { Input, Label } from "../ui/Input";
 import { Modal } from "../ui/Modal";
 import { addExpense } from "../../lib/register";
-import { EXPENSE_CATEGORIES } from "../../lib/expenses";
+import {
+  EXPENSE_CATEGORIES,
+  EXPENSE_PAYMENT_MODES,
+} from "../../lib/expenses";
 
 export function ExpenseModal({ open, sessionId, userId, onClose }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [category, setCategory] = useState("MISC");
+  const [paymentMode, setPaymentMode] = useState("CASH");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -17,10 +21,18 @@ export function ExpenseModal({ open, sessionId, userId, onClose }) {
     setError("");
     setPending(true);
     try {
-      await addExpense({ sessionId, userId, amount, note, category });
+      await addExpense({
+        sessionId,
+        userId,
+        amount,
+        note,
+        category,
+        paymentMode,
+      });
       setAmount("");
       setNote("");
       setCategory("MISC");
+      setPaymentMode("CASH");
       onClose();
     } catch (err) {
       setError(err.message || "Could not save expense.");
@@ -30,9 +42,33 @@ export function ExpenseModal({ open, sessionId, userId, onClose }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Cash expense">
+    <Modal open={open} onClose={onClose} title="Record expense">
       {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
       <form onSubmit={submit} className="space-y-4">
+        <div>
+          <Label>Paid via</Label>
+          <div className="mt-1 grid grid-cols-3 gap-2">
+            {EXPENSE_PAYMENT_MODES.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setPaymentMode(opt.id)}
+                className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  paymentMode === opt.id
+                    ? "border-action bg-action text-canvas"
+                    : "border-ash bg-paper text-fog hover:bg-canvas hover:text-ink"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {paymentMode === "BANK" ? (
+            <p className="mt-1.5 text-xs text-fog">
+              Deducts from bank balance (not till cash/UPI).
+            </p>
+          ) : null}
+        </div>
         <div>
           <Label>Category</Label>
           <select
@@ -41,7 +77,9 @@ export function ExpenseModal({ open, sessionId, userId, onClose }) {
             onChange={(e) => setCategory(e.target.value)}
           >
             {EXPENSE_CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
             ))}
           </select>
         </div>

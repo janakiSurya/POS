@@ -9,7 +9,6 @@ import {
   RotateCcw,
   Banknote,
   Smartphone,
-  CreditCard,
   CheckCircle2,
   Printer,
 } from "lucide-react";
@@ -37,7 +36,6 @@ import { flushOfflineQueue } from "../../lib/offlineFlush";
 const PAYMENT_OPTIONS = [
   { id: "CASH", label: "Cash", icon: Banknote },
   { id: "UPI", label: "UPI", icon: Smartphone },
-  { id: "CREDIT", label: "Credit", icon: CreditCard },
 ];
 
 function useIsMobile(breakpoint = 1024) {

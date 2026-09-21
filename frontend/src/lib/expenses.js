@@ -2,6 +2,9 @@ import { localDb } from "../db/localDb";
 import { supabase } from "./supabaseClient";
 import { isOnline } from "./network";
 import { toNum } from "./format";
+import { businessDateIST } from "./businessDay";
+import { getBankBalance, recordBankExpenseOut } from "./bank";
+import { FreshKeys, invalidateFresh } from "./freshSync";
 
 export const EXPENSE_CATEGORIES = [
   { value: "SALARY", label: "Staff Salary" },
@@ -10,6 +13,24 @@ export const EXPENSE_CATEGORIES = [
   { value: "INTERNET", label: "Internet / Phone" },
   { value: "MISC", label: "Miscellaneous" },
 ];
+
+export const EXPENSE_PAYMENT_MODES = [
+  { id: "CASH", label: "Cash" },
+  { id: "UPI", label: "UPI" },
+  { id: "BANK", label: "Bank" },
+];
+
+export function normalizeExpensePaymentMode(mode) {
+  if (mode === "UPI") return "UPI";
+  if (mode === "BANK") return "BANK";
+  return "CASH";
+}
+
+export function paymentModeLabel(mode) {
+  if (mode === "UPI") return "UPI";
+  if (mode === "BANK") return "Bank";
+  return "Cash";
+}
 
 export function categoryLabel(value) {
   return EXPENSE_CATEGORIES.find((c) => c.value === value)?.label ?? value;
@@ -124,7 +145,28 @@ export async function getFixedCostLogsForMonth(month) {
   return localDb.fixed_cost_logs.where("month").equals(month).toArray();
 }
 
-export async function logFixedCost({ templateId, userId, month, name, category, amount, note, paidDate }) {
+export async function logFixedCost({
+  templateId,
+  userId,
+  month,
+  name,
+  category,
+  amount,
+  note,
+  paidDate,
+  paymentMode = "CASH",
+}) {
+  const mode = normalizeExpensePaymentMode(paymentMode);
+  const amt = toNum(amount);
+  if (amt <= 0) throw new Error("Amount must be greater than zero.");
+
+  if (mode === "BANK") {
+    const bank = await getBankBalance();
+    if (amt > bank + 0.009) {
+      throw new Error(`Not enough bank balance (₹${bank}).`);
+    }
+  }
+
   const row = {
     id: crypto.randomUUID(),
     template_id: templateId ?? null,
@@ -132,12 +174,14 @@ export async function logFixedCost({ templateId, userId, month, name, category, 
     month,
     name,
     category,
-    amount: toNum(amount),
+    amount: amt,
     note: note || null,
     paid_date: paidDate || null,
+    payment_mode: mode,
     created_at: new Date().toISOString(),
   };
 
+  let saved = row;
   if (supabase && isOnline()) {
     const { data, error } = await supabase
       .from("fixed_cost_logs")
@@ -150,22 +194,42 @@ export async function logFixedCost({ templateId, userId, month, name, category, 
         amount: row.amount,
         note: row.note,
         paid_date: row.paid_date,
+        payment_mode: row.payment_mode,
       })
       .select()
       .single();
     if (error) throw error;
     await localDb.fixed_cost_logs.put(data);
-    return data;
+    saved = data;
+  } else {
+    await localDb.fixed_cost_logs.put(row);
   }
 
-  await localDb.fixed_cost_logs.put(row);
-  return row;
+  if (mode === "BANK") {
+    await recordBankExpenseOut({
+      amount: amt,
+      entryDate: paidDate || businessDateIST(),
+      note: note?.trim() || `${name} (${month})`,
+      userId,
+      fixedCostLogId: saved.id,
+    });
+    await invalidateFresh(FreshKeys.DASHBOARD);
+  }
+
+  return saved;
 }
 
 export async function deleteFixedCostLog(id) {
+  const existing = await localDb.fixed_cost_logs.get(id);
   if (supabase && isOnline()) {
+    // ON DELETE CASCADE removes linked bank_ledger when payment_mode was BANK
     const { error } = await supabase.from("fixed_cost_logs").delete().eq("id", id);
     if (error) throw error;
+  } else if (existing?.payment_mode === "BANK") {
+    const linked = await localDb.bank_ledger
+      .filter((r) => r.fixed_cost_log_id === id)
+      .toArray();
+    for (const r of linked) await localDb.bank_ledger.delete(r.id);
   }
   await localDb.fixed_cost_logs.delete(id);
 }

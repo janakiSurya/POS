@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Search, RefreshCw, FileSpreadsheet, PenLine } from "lucide-react";
 import { localDb } from "../../db/localDb";
-import { formatInr } from "../../lib/format";
+import { formatInr, toNum } from "../../lib/format";
 import {
   loadPurchaseInvoiceDetails,
 } from "../../lib/purchases";
+import { purchasePayableTotal } from "../../lib/bank";
 import { syncPurchasesIfNeeded, syncSuppliersIfNeeded } from "../../lib/hybridSync";
 import { compareStoredInvoice } from "../../lib/purchaseCalculations";
 import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
@@ -32,6 +34,24 @@ function statusBadge(status) {
     DRAFT: "bg-paper text-fog",
   };
   return styles[status] || styles.DRAFT;
+}
+
+function paymentStatusOf(inv) {
+  const total = purchasePayableTotal(inv);
+  const paid = toNum(inv.amount_paid);
+  if (paid <= 0) return "UNPAID";
+  if (paid + 0.009 >= total) return "PAID";
+  return "PARTIAL";
+}
+
+function paymentBadge(inv) {
+  const status = paymentStatusOf(inv);
+  const styles = {
+    PAID: "bg-success/20 text-success",
+    PARTIAL: "bg-warning/20 text-warning",
+    UNPAID: "bg-paper text-fog",
+  };
+  return styles[status] || styles.UNPAID;
 }
 
 export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
@@ -155,6 +175,13 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                     >
                       {inv.status.replace("_", " ")}
                     </span>
+                    {inv.status === "POSTED" ? (
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${paymentBadge(inv)}`}
+                      >
+                        {paymentStatusOf(inv).replace("_", " ")}
+                      </span>
+                    ) : null}
                     <span className="text-[10px] uppercase text-silver">
                       {inv.source === "EXCEL" ? "Excel" : "Manual"}
                     </span>
@@ -166,6 +193,9 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                       ? ` · ${lineCounts.get(inv.id)} lines`
                       : ""}
                     {inv.invoice_type ? ` · ${inv.invoice_type}` : ""}
+                    {inv.status === "POSTED" && toNum(inv.amount_paid) > 0
+                      ? ` · paid ${formatInr(inv.amount_paid)}`
+                      : ""}
                   </p>
                   </div>
                 </div>
@@ -206,6 +236,24 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                 />
                 {detail.invoice.notes ? (
                   <p className="text-sm text-fog">{detail.invoice.notes}</p>
+                ) : null}
+                {detail.invoice.status === "POSTED" ? (
+                  <p className="text-sm text-fog">
+                    Payment:{" "}
+                    <span className="font-medium text-ink">
+                      {paymentStatusOf(detail.invoice).replace("_", " ")}
+                    </span>
+                    {" · "}
+                    paid {formatInr(detail.invoice.amount_paid)} of{" "}
+                    {formatInr(purchasePayableTotal(detail.invoice))}
+                    {toNum(detail.invoice.printed_grand_total) > 0
+                      ? " (printed)"
+                      : ""}
+                    {" · "}
+                    <Link to="/money" className="text-action underline">
+                      Pay from Money
+                    </Link>
+                  </p>
                 ) : null}
               </div>
             }

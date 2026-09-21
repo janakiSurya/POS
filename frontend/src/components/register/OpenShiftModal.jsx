@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Button } from "../ui/Button";
-import { Input, Label } from "../ui/Input";
 import { openShift } from "../../lib/register";
 
 export function OpenShiftModal({
@@ -12,8 +11,6 @@ export function OpenShiftModal({
   profileName,
   embedded = false,
 }) {
-  const [cash, setCash] = useState("");
-  const [upi, setUpi] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -23,76 +20,48 @@ export function OpenShiftModal({
   const greeting = profileName ? `Welcome, ${profileName}` : "Welcome";
 
   async function submit(e) {
-    e.preventDefault();
+    e?.preventDefault?.();
     setError("");
-    if (cash === "" || upi === "") {
-      setError("Opening cash and UPI are required.");
-      return;
-    }
     setPending(true);
     try {
-      await openShift({
-        userId,
-        openingCash: cash,
-        openingUpi: upi,
-      });
+      await openShift({ userId });
       onDone();
     } catch (err) {
-      setError(err.message || "Could not open shift.");
+      setError(err.message || "Could not open session.");
     } finally {
       setPending(false);
     }
   }
 
   const formCard = (
-        <div className="w-full max-w-md rounded-xl border border-ash bg-canvas p-6 shadow-sm">
-          <div className="mb-6 text-center">
-            <img
-              src="/logo.png"
-              alt=""
-              className="mx-auto mb-3 h-16 w-16 object-contain sm:h-20 sm:w-20"
-            />
-            <p className="text-sm text-fog">{greeting}</p>
-            <h1 className="mt-1 text-xl font-semibold tracking-tight text-ink">
-              Start daily shift
-            </h1>
-            <p className="mt-2 text-sm text-fog">
-              Enter opening cash in the drawer and UPI balance before using the counter.
-            </p>
-          </div>
+    <div className="w-full max-w-md rounded-xl border border-ash bg-canvas p-6 shadow-sm">
+      <div className="mb-6 text-center">
+        <img
+          src="/logo.png"
+          alt=""
+          className="mx-auto mb-3 h-16 w-16 object-contain sm:h-20 sm:w-20"
+        />
+        <p className="text-sm text-fog">{greeting}</p>
+        <h1 className="mt-1 text-xl font-semibold tracking-tight text-ink">
+          Open today&apos;s session
+        </h1>
+        <p className="mt-2 text-sm text-fog">
+          One session per day. If you ended early, this continues the same day
+          session — no opening cash or UPI to enter.
+        </p>
+      </div>
 
-          {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
+      {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
 
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <Label>Opening cash (₹)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={cash}
-                onChange={(e) => setCash(e.target.value)}
-                placeholder="Enter amount"
-                required
-              />
-            </div>
-            <div>
-              <Label>Opening UPI (₹)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={upi}
-                onChange={(e) => setUpi(e.target.value)}
-                placeholder="Enter amount"
-                required
-              />
-            </div>
-            <Button type="submit" disabled={pending} className="w-full">
-              {pending ? "Opening…" : "Open shift"}
-            </Button>
-          </form>
-        </div>
+      <Button
+        type="button"
+        disabled={pending}
+        className="w-full"
+        onClick={submit}
+      >
+        {pending ? "Opening…" : "Open session"}
+      </Button>
+    </div>
   );
 
   if (embedded) {

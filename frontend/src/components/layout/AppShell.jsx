@@ -10,6 +10,7 @@ const staffLinks = [
 
 const ownerLinks = [
   { to: "/dashboard", label: "Dashboard" },
+  { to: "/money", label: "Money" },
   { to: "/reports", label: "Reports" },
   { to: "/expenses", label: "Expenses" },
   { to: "/inventory", label: "Inventory" },
@@ -74,11 +75,11 @@ export function AppShell({
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-ink">{title}</p>
               <p className="text-xs text-fog md:hidden">
-                {sessionOpen ? "Shift open" : "Shift closed"}
+                {sessionOpen ? "Session open" : "Session closed"}
                 {!online ? " · Offline" : ""}
               </p>
               <p className="hidden text-xs text-fog md:block">
-                {sessionOpen ? "Shift open" : "Shift closed"}
+                {sessionOpen ? "Session open" : "Session closed"}
                 {!online ? " · Offline" : ""}
               </p>
             </div>
@@ -111,7 +112,7 @@ export function AppShell({
                   Expense
                 </Button>
                 <Button variant="secondary" className="px-3 text-xs" onClick={onCloseShift}>
-                  Close shift
+                  End session
                 </Button>
               </>
             ) : null}

@@ -31,6 +31,15 @@ localDb.version(4).stores({
   fixed_cost_logs: "id, template_id, month",
 });
 
+localDb.version(5).stores({
+  lenders: "id, name",
+  loan_entries: "id, lender_id, entry_date, entry_type",
+  bank_ledger: "id, entry_date, entry_type",
+  cash_deposits: "id, deposited_on",
+  cash_deposit_days: "id, cash_deposit_id, business_date",
+  upi_deposits: "id, business_date",
+});
+
 export async function getSyncMeta(key) {
   const row = await localDb.sync_meta.get(key);
   return row?.value ?? null;

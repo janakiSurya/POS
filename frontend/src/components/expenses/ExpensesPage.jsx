@@ -4,6 +4,7 @@ import { localDb } from "../../db/localDb";
 import { syncExpensesIfNeeded, syncFixedCostsIfNeeded } from "../../lib/hybridSync";
 import {
   EXPENSE_CATEGORIES,
+  EXPENSE_PAYMENT_MODES,
   categoryLabel,
   currentMonthKey,
   deleteFixedCostLog,
@@ -11,6 +12,7 @@ import {
   getFixedCostLogsForMonth,
   getTemplates,
   logFixedCost,
+  paymentModeLabel,
   saveTemplate,
 } from "../../lib/expenses";
 import { FreshKeys, invalidateFresh } from "../../lib/freshSync";
@@ -129,6 +131,9 @@ function DailyExpensesTab({ userId }) {
                       <span className="rounded bg-paper px-1.5 py-0.5 text-[10px] font-medium uppercase text-fog">
                         {categoryLabel(e.category || "MISC")}
                       </span>
+                      <span className="ml-1.5 rounded bg-paper px-1.5 py-0.5 text-[10px] font-medium uppercase text-fog">
+                        {paymentModeLabel(e.payment_mode)}
+                      </span>
                       {e.note ? (
                         <p className="mt-0.5 truncate text-xs text-fog">{e.note}</p>
                       ) : null}
@@ -157,6 +162,7 @@ function MonthlyFixedTab({ userId }) {
   const [logAmount, setLogAmount] = useState("");
   const [logNote, setLogNote] = useState("");
   const [logDate, setLogDate] = useState("");
+  const [logPaymentMode, setLogPaymentMode] = useState("CASH");
   const [error, setError] = useState("");
   const [logError, setLogError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -215,6 +221,7 @@ function MonthlyFixedTab({ userId }) {
     setLogAmount(String(t.amount));
     setLogNote("");
     setLogDate("");
+    setLogPaymentMode("CASH");
     setLogError("");
   }
 
@@ -232,6 +239,7 @@ function MonthlyFixedTab({ userId }) {
         amount: logAmount,
         note: logNote,
         paidDate: logDate || null,
+        paymentMode: logPaymentMode,
       });
       setLogModal(null);
       await invalidateFresh(FreshKeys.FIXED_COSTS, FreshKeys.DASHBOARD, FreshKeys.EXPENSES);
@@ -293,7 +301,13 @@ function MonthlyFixedTab({ userId }) {
                     </div>
                     <p className="mt-0.5 text-xs text-fog">
                       {formatInr(t.amount)} · Due day {t.day_of_month || 1}
-                      {log ? ` · Paid ${formatInr(log.amount)}` : ""}
+                      {log
+                        ? ` · Paid ${formatInr(log.amount)}${
+                            log.payment_mode
+                              ? ` (${paymentModeLabel(log.payment_mode)})`
+                              : ""
+                          }`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-1.5">
@@ -433,6 +447,34 @@ function MonthlyFixedTab({ userId }) {
       >
         {logError ? <p className="mb-3 text-sm text-danger">{logError}</p> : null}
         <form onSubmit={submitLog} className="space-y-4">
+          <div>
+            <Label>Paid via</Label>
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              {EXPENSE_PAYMENT_MODES.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setLogPaymentMode(opt.id)}
+                  className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                    logPaymentMode === opt.id
+                      ? "border-action bg-action text-canvas"
+                      : "border-ash bg-paper text-fog hover:bg-canvas hover:text-ink"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {logPaymentMode === "BANK" ? (
+              <p className="mt-1.5 text-xs text-fog">
+                Deducts from bank balance.
+              </p>
+            ) : (
+              <p className="mt-1.5 text-xs text-fog">
+                Logged for records only (does not change till or bank).
+              </p>
+            )}
+          </div>
           <div>
             <Label>Amount paid (₹)</Label>
             <Input

@@ -452,21 +452,25 @@ export async function syncPurchaseInvoicesFromServer(limit = 200) {
     .select("*")
     .order("invoice_date", { ascending: false })
     .limit(limit);
+  // Never wipe local when server is empty (protects against accidental deletes).
+  if (!invoices?.length) return;
+
   await localDb.purchase_invoices.clear();
   await localDb.purchase_lines.clear();
-  if (invoices?.length) {
-    await localDb.purchase_invoices.bulkPut(invoices);
-    const ids = invoices.map((i) => i.id);
-    const lines = await fetchAllFromSupabase("purchase_lines", {
-      filter: (q) => q.in("purchase_invoice_id", ids),
-    });
-    if (lines.length) await localDb.purchase_lines.bulkPut(lines);
-  }
+  await localDb.purchase_invoices.bulkPut(invoices);
+  const ids = invoices.map((i) => i.id);
+  const lines = await fetchAllFromSupabase("purchase_lines", {
+    filter: (q) => q.in("purchase_invoice_id", ids),
+  });
+  if (lines.length) await localDb.purchase_lines.bulkPut(lines);
+
   const suppliers = await fetchAllFromSupabase("suppliers", {
     order: (q) => q.order("name"),
   });
-  await localDb.suppliers.clear();
-  if (suppliers.length) await localDb.suppliers.bulkPut(suppliers);
+  if (suppliers.length) {
+    await localDb.suppliers.clear();
+    await localDb.suppliers.bulkPut(suppliers);
+  }
 }
 
 export async function loadPurchaseInvoiceDetails(invoiceId) {

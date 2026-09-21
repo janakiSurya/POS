@@ -15,6 +15,7 @@ import { InventoryList } from "./components/inventory/InventoryList";
 import { PurchaseEntry } from "./components/inventory/PurchaseEntry";
 import { ExcelImport } from "./components/inventory/ExcelImport";
 import { ExpensesPage } from "./components/expenses/ExpensesPage";
+import { MoneyPage } from "./components/money/MoneyPage";
 import { getTodayOpenSession } from "./lib/register";
 import { DEMO_PROFILE, seedDemoData } from "./lib/demo";
 import { flushOfflineQueue } from "./lib/offlineFlush";
@@ -61,8 +62,8 @@ function ProtectedApp({ profile, isOwner, signOut }) {
     );
   }
 
-  // Staff must open a shift before using the app. Owners keep the
-  // dashboard/nav and only start a shift when they open POS.
+  // Staff must open a session before using the app. Owners keep the
+  // dashboard/nav and only open a session when they use POS.
   if (!isOwner && needOpen && !session) {
     if (!location.pathname.startsWith("/pos")) {
       return <Navigate to="/pos" replace />;
@@ -133,6 +134,10 @@ function ProtectedApp({ profile, isOwner, signOut }) {
               <Route
                 path="/expenses"
                 element={<ExpensesPage userId={profile.id} />}
+              />
+              <Route
+                path="/money"
+                element={<MoneyPage userId={profile.id} />}
               />
             </>
           ) : null}
