@@ -70,11 +70,12 @@ export async function syncMoneyFromServer() {
   if (purchases.length) await localDb.purchase_invoices.bulkPut(purchases);
 }
 
-/** Bank balance from ledger (IN − OUT). */
+/** Bank balance from ledger (IN − OUT), bank-mode rows only. */
 export async function getBankBalance() {
   const rows = await localDb.bank_ledger.toArray();
   let bal = 0;
   for (const r of rows) {
+    if (r.payment_mode === "CASH") continue;
     const amt = toNum(r.amount);
     if (r.direction === "IN") bal += amt;
     else bal -= amt;
@@ -125,7 +126,7 @@ export async function recordBankExpenseOut({
   return ledger;
 }
 
-/** Per-day cash sales − cash expenses (IST). */
+/** Per-day sales cash only (till) − cash expenses. Deposit to bank only — not for paying suppliers/loans. */
 export async function buildDailyCashBuckets() {
   const invoices = await localDb.invoices.toArray();
   const expenses = await localDb.cash_expenses.toArray();
@@ -154,7 +155,7 @@ export async function buildDailyCashBuckets() {
     bump(ymdFromIso(inv.created_at), "cashSales", toNum(inv.total_amount));
   }
   for (const e of expenses) {
-    // BANK expenses do not reduce till cash
+    // Till cash only — UPI/BANK expenses do not reduce undeposited sales cash
     if (e.payment_mode === "UPI" || e.payment_mode === "BANK") continue;
     bump(ymdFromIso(e.created_at), "cashExpenses", toNum(e.amount));
   }
@@ -190,6 +191,30 @@ export async function getUndepositedCashDays() {
 export async function getUndepositedCashTotal() {
   const days = await getUndepositedCashDays();
   return round2(days.reduce((s, d) => s + d.remaining, 0));
+}
+
+/**
+ * Cash-on-hand wallet (loan cash etc.) — separate from undeposited sales cash.
+ * + cash loan received − cash loan repaid − cash-mode ledger OUTs (supplier, etc.)
+ */
+export async function getCashOnHandBalance() {
+  const [loans, ledger] = await Promise.all([
+    localDb.loan_entries.toArray(),
+    localDb.bank_ledger.toArray(),
+  ]);
+  let bal = 0;
+  for (const e of loans) {
+    if (e.payment_mode !== "CASH") continue;
+    if (e.entry_type === "RECEIVED") bal += toNum(e.amount);
+    else if (e.entry_type === "REPAID") bal -= toNum(e.amount);
+  }
+  for (const r of ledger) {
+    if (r.payment_mode !== "CASH") continue;
+    const amt = toNum(r.amount);
+    if (r.direction === "IN") bal += amt;
+    else bal -= amt;
+  }
+  return round2(bal);
 }
 
 /** Per-day UPI sales − UPI expenses. */
@@ -240,6 +265,11 @@ export async function getUnconfirmedUpiDays() {
 }
 
 export async function getLenderOutstanding(lenderId) {
+  return getLenderPrincipalOutstanding(lenderId);
+}
+
+/** Principal only: RECEIVED − (REPAID amount − interest_amount). */
+export async function getLenderPrincipalOutstanding(lenderId) {
   const entries = await localDb.loan_entries
     .where("lender_id")
     .equals(lenderId)
@@ -247,32 +277,123 @@ export async function getLenderOutstanding(lenderId) {
   let bal = 0;
   for (const e of entries) {
     if (e.entry_type === "RECEIVED") bal += toNum(e.amount);
-    else bal -= toNum(e.amount);
+    else if (e.entry_type === "REPAID") {
+      bal -= toNum(e.amount) - toNum(e.interest_amount);
+    }
   }
-  return round2(bal);
+  return round2(Math.max(0, bal));
+}
+
+function daysBetweenYmd(fromYmd, toYmd) {
+  if (!fromYmd || !toYmd) return 0;
+  const a = new Date(`${String(fromYmd).slice(0, 10)}T12:00:00`);
+  const b = new Date(`${String(toYmd).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+  return Math.max(0, Math.round((b.getTime() - a.getTime()) / 86400000));
+}
+
+function normalizeLoanPaymentMode(mode) {
+  return mode === "CASH" ? "CASH" : "BANK";
+}
+
+/** Unpaid principal slices after FIFO application of repayments. */
+export async function getLenderPrincipalTranches(lenderId) {
+  const entries = await localDb.loan_entries
+    .where("lender_id")
+    .equals(lenderId)
+    .toArray();
+  entries.sort((a, b) => {
+    const d = String(a.entry_date).localeCompare(String(b.entry_date));
+    if (d !== 0) return d;
+    return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+  });
+
+  const tranches = [];
+  for (const e of entries) {
+    if (e.entry_type === "RECEIVED") {
+      tranches.push({
+        id: e.id,
+        entry_date: String(e.entry_date).slice(0, 10),
+        remaining: toNum(e.amount),
+      });
+      continue;
+    }
+    if (e.entry_type !== "REPAID") continue;
+    let principal = round2(toNum(e.amount) - toNum(e.interest_amount));
+    for (const t of tranches) {
+      if (principal <= 0.009) break;
+      const take = Math.min(t.remaining, principal);
+      t.remaining = round2(t.remaining - take);
+      principal = round2(principal - take);
+    }
+  }
+  return tranches.filter((t) => t.remaining > 0.009);
+}
+
+export async function getLenderAccruedInterest(lenderId, asOfDate, monthlyRate) {
+  let rate = monthlyRate;
+  if (rate == null) {
+    const lender = await localDb.lenders.get(lenderId);
+    rate = toNum(lender?.interest_rate_monthly);
+  }
+  rate = toNum(rate);
+  if (rate <= 0) return 0;
+
+  const asOf = String(asOfDate || businessDateIST()).slice(0, 10);
+  const tranches = await getLenderPrincipalTranches(lenderId);
+  let interest = 0;
+  for (const t of tranches) {
+    const days = daysBetweenYmd(t.entry_date, asOf);
+    interest += t.remaining * (rate / 100) * (days / 30);
+  }
+  return round2(interest);
+}
+
+export async function getLenderRepayBreakdown(lenderId, asOfDate) {
+  const lender = await localDb.lenders.get(lenderId);
+  const principal = await getLenderPrincipalOutstanding(lenderId);
+  const interest = await getLenderAccruedInterest(
+    lenderId,
+    asOfDate,
+    lender?.interest_rate_monthly,
+  );
+  return {
+    principal,
+    interest,
+    total: round2(principal + interest),
+    rateMonthly: toNum(lender?.interest_rate_monthly),
+  };
 }
 
 export async function getTotalLoanOutstanding() {
   const lenders = await localDb.lenders.toArray();
   let total = 0;
   for (const l of lenders) {
-    total += await getLenderOutstanding(l.id);
+    total += await getLenderPrincipalOutstanding(l.id);
   }
   return round2(total);
 }
 
 export async function getMoneyOverview() {
-  const [bankBalance, undepositedCash, loanOutstanding, undepositedDays, upiPending] =
-    await Promise.all([
-      getBankBalance(),
-      getUndepositedCashTotal(),
-      getTotalLoanOutstanding(),
-      getUndepositedCashDays(),
-      getUnconfirmedUpiDays(),
-    ]);
+  const [
+    bankBalance,
+    undepositedCash,
+    cashOnHand,
+    loanOutstanding,
+    undepositedDays,
+    upiPending,
+  ] = await Promise.all([
+    getBankBalance(),
+    getUndepositedCashTotal(),
+    getCashOnHandBalance(),
+    getTotalLoanOutstanding(),
+    getUndepositedCashDays(),
+    getUnconfirmedUpiDays(),
+  ]);
   return {
     bankBalance,
     undepositedCash,
+    cashOnHand,
     loanOutstanding,
     undepositedDayCount: undepositedDays.length,
     upiPendingTotal: round2(upiPending.reduce((s, d) => s + d.remaining, 0)),
@@ -284,19 +405,32 @@ export async function getMoneyOverview() {
 
 export async function listLendersWithBalances() {
   const lenders = await localDb.lenders.orderBy("name").toArray();
+  const today = businessDateIST();
   const out = [];
   for (const l of lenders) {
-    out.push({ ...l, outstanding: await getLenderOutstanding(l.id) });
+    const outstanding = await getLenderPrincipalOutstanding(l.id);
+    const interestDue = await getLenderAccruedInterest(
+      l.id,
+      today,
+      l.interest_rate_monthly,
+    );
+    out.push({ ...l, outstanding, interestDue });
   }
   return out;
 }
 
-export async function createLender({ name, phone, notes }) {
+export async function createLender({ name, phone, notes, interestRateMonthly }) {
+  const rateRaw = interestRateMonthly;
+  const rate =
+    rateRaw === "" || rateRaw == null || Number.isNaN(Number(rateRaw))
+      ? null
+      : toNum(rateRaw);
   const row = {
     id: crypto.randomUUID(),
     name: name.trim(),
     phone: phone?.trim() || null,
     notes: notes?.trim() || null,
+    interest_rate_monthly: rate != null && rate > 0 ? rate : null,
     created_at: new Date().toISOString(),
   };
   if (supabase && isOnline()) {
@@ -316,17 +450,37 @@ export async function recordLoanEntry({
   entryDate,
   note,
   userId,
+  paymentMode = "BANK",
 }) {
   const amt = round2(amount);
   if (amt <= 0) throw new Error("Amount must be greater than zero.");
+  const mode = normalizeLoanPaymentMode(paymentMode);
+  const date = entryDate || businessDateIST();
+
+  let interestAmount = 0;
   if (entryType === "REPAID") {
-    const owed = await getLenderOutstanding(lenderId);
-    if (amt > owed + 0.009) {
-      throw new Error(`Repayment exceeds outstanding (${owed}).`);
+    const breakdown = await getLenderRepayBreakdown(lenderId, date);
+    if (amt > breakdown.total + 0.009) {
+      throw new Error(
+        `Repayment exceeds principal + interest (₹${breakdown.total}).`,
+      );
     }
-    const bank = await getBankBalance();
-    if (amt > bank + 0.009) {
-      throw new Error(`Not enough bank balance (₹${bank}).`);
+    interestAmount = round2(Math.min(amt, breakdown.interest));
+    const principalPart = round2(amt - interestAmount);
+    if (principalPart > breakdown.principal + 0.009) {
+      throw new Error(`Principal portion exceeds outstanding (₹${breakdown.principal}).`);
+    }
+
+    if (mode === "BANK") {
+      const bank = await getBankBalance();
+      if (amt > bank + 0.009) {
+        throw new Error(`Not enough bank balance (₹${bank}).`);
+      }
+    } else {
+      const cash = await getCashOnHandBalance();
+      if (amt > cash + 0.009) {
+        throw new Error(`Not enough cash on hand (₹${cash}).`);
+      }
     }
   }
 
@@ -335,24 +489,29 @@ export async function recordLoanEntry({
     lender_id: lenderId,
     entry_type: entryType,
     amount: amt,
-    entry_date: entryDate || businessDateIST(),
+    interest_amount: entryType === "REPAID" ? interestAmount : 0,
+    payment_mode: mode,
+    entry_date: date,
     note: note?.trim() || null,
     created_by: userId,
     created_at: new Date().toISOString(),
   };
 
-  const ledger = {
-    id: crypto.randomUUID(),
-    entry_date: entry.entry_date,
-    entry_type: entryType === "RECEIVED" ? "LOAN_IN" : "LOAN_OUT",
-    amount: amt,
-    direction: entryType === "RECEIVED" ? "IN" : "OUT",
-    note: note?.trim() || null,
-    lender_id: lenderId,
-    loan_entry_id: entry.id,
-    created_by: userId,
-    created_at: new Date().toISOString(),
-  };
+  const writeLedger = mode === "BANK";
+  const ledger = writeLedger
+    ? {
+        id: crypto.randomUUID(),
+        entry_date: entry.entry_date,
+        entry_type: entryType === "RECEIVED" ? "LOAN_IN" : "LOAN_OUT",
+        amount: amt,
+        direction: entryType === "RECEIVED" ? "IN" : "OUT",
+        note: note?.trim() || null,
+        lender_id: lenderId,
+        loan_entry_id: entry.id,
+        created_by: userId,
+        created_at: new Date().toISOString(),
+      }
+    : null;
 
   if (supabase && isOnline()) {
     const { data: eData, error: eErr } = await supabase
@@ -361,20 +520,25 @@ export async function recordLoanEntry({
       .select()
       .single();
     if (eErr) throw eErr;
-    ledger.loan_entry_id = eData.id;
-    const { data: lData, error: lErr } = await supabase
-      .from("bank_ledger")
-      .insert({ ...ledger, loan_entry_id: eData.id })
-      .select()
-      .single();
-    if (lErr) throw lErr;
     await localDb.loan_entries.put(eData);
-    await localDb.bank_ledger.put(lData);
+
+    let lData = null;
+    if (ledger) {
+      ledger.loan_entry_id = eData.id;
+      const { data, error: lErr } = await supabase
+        .from("bank_ledger")
+        .insert({ ...ledger, loan_entry_id: eData.id })
+        .select()
+        .single();
+      if (lErr) throw lErr;
+      await localDb.bank_ledger.put(data);
+      lData = data;
+    }
     return { entry: eData, ledger: lData };
   }
 
   await localDb.loan_entries.put(entry);
-  await localDb.bank_ledger.put(ledger);
+  if (ledger) await localDb.bank_ledger.put(ledger);
   return { entry, ledger };
 }
 
@@ -548,12 +712,14 @@ export async function payPurchaseInvoice({
   entryDate,
   note,
   userId,
+  paymentMode = "BANK",
 }) {
   const inv = await localDb.purchase_invoices.get(purchaseInvoiceId);
   if (!inv) throw new Error("Purchase invoice not found.");
 
   const amt = round2(amount);
   if (amt <= 0) throw new Error("Amount must be greater than zero.");
+  const mode = paymentMode === "CASH" ? "CASH" : "BANK";
 
   const already = toNum(inv.amount_paid);
   const total = purchasePayableTotal(inv);
@@ -562,9 +728,16 @@ export async function payPurchaseInvoice({
     throw new Error(`Payment exceeds remaining (₹${remaining}).`);
   }
 
-  const bank = await getBankBalance();
-  if (amt > bank + 0.009) {
-    throw new Error(`Not enough bank balance (₹${bank}).`);
+  if (mode === "BANK") {
+    const bank = await getBankBalance();
+    if (amt > bank + 0.009) {
+      throw new Error(`Not enough bank balance (₹${bank}).`);
+    }
+  } else {
+    const cash = await getCashOnHandBalance();
+    if (amt > cash + 0.009) {
+      throw new Error(`Not enough cash on hand (₹${cash}).`);
+    }
   }
 
   const newPaid = round2(already + amt);
@@ -577,6 +750,7 @@ export async function payPurchaseInvoice({
     entry_type: "SUPPLIER_PAYMENT",
     amount: amt,
     direction: "OUT",
+    payment_mode: mode,
     note: note?.trim() || `Payment for invoice ${inv.invoice_number}`,
     supplier_id: inv.supplier_id,
     purchase_invoice_id: inv.id,
@@ -623,9 +797,21 @@ export async function listBankLedger(limit = 50) {
   const rows = await localDb.bank_ledger
     .orderBy("entry_date")
     .reverse()
-    .limit(limit)
     .toArray();
-  return rows;
+  // Overview "bank movements" — exclude cash-mode rows (shown under supplier history).
+  return rows
+    .filter((r) => r.payment_mode !== "CASH")
+    .slice(0, limit);
+}
+
+export async function listSupplierPayments(limit = 40) {
+  const rows = await localDb.bank_ledger
+    .orderBy("entry_date")
+    .reverse()
+    .toArray();
+  return rows
+    .filter((r) => r.entry_type === "SUPPLIER_PAYMENT")
+    .slice(0, limit);
 }
 
 export async function listUnpaidPurchaseInvoices() {

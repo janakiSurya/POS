@@ -194,8 +194,21 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                       : ""}
                     {inv.invoice_type ? ` · ${inv.invoice_type}` : ""}
                     {inv.status === "POSTED" && toNum(inv.amount_paid) > 0
-                      ? ` · paid ${formatInr(inv.amount_paid)}`
-                      : ""}
+                      ? (() => {
+                          const payable = purchasePayableTotal(inv);
+                          const paid = toNum(inv.amount_paid);
+                          const rem = Math.max(
+                            0,
+                            Math.round((payable - paid + Number.EPSILON) * 100) /
+                              100,
+                          );
+                          return rem > 0.009
+                            ? ` · paid ${formatInr(paid)} · due ${formatInr(rem)}`
+                            : ` · paid ${formatInr(paid)} · paid in full`;
+                        })()
+                      : inv.status === "POSTED"
+                        ? ` · due ${formatInr(purchasePayableTotal(inv))}`
+                        : ""}
                   </p>
                   </div>
                 </div>
@@ -249,6 +262,21 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                     {toNum(detail.invoice.printed_grand_total) > 0
                       ? " (printed)"
                       : ""}
+                    {(() => {
+                      const payable = purchasePayableTotal(detail.invoice);
+                      const rem = Math.max(
+                        0,
+                        Math.round(
+                          (payable -
+                            toNum(detail.invoice.amount_paid) +
+                            Number.EPSILON) *
+                            100,
+                        ) / 100,
+                      );
+                      return rem > 0.009
+                        ? ` · remaining ${formatInr(rem)}`
+                        : "";
+                    })()}
                     {" · "}
                     <Link to="/money" className="text-action underline">
                       Pay from Money

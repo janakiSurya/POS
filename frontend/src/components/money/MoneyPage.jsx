@@ -21,9 +21,11 @@ import {
   listLendersWithBalances,
   listLoanEntries,
   listUnpaidPurchaseInvoices,
+  listSupplierPayments,
   payPurchaseInvoice,
   purchasePayableTotal,
   recordLoanEntry,
+  getLenderRepayBreakdown,
   syncMoneyFromServer,
 } from "../../lib/bank";
 import { PageHeader } from "../shared/PageHeader";
@@ -63,6 +65,8 @@ export function MoneyPage({ userId }) {
   const [cashDays, setCashDays] = useState([]);
   const [upiDays, setUpiDays] = useState([]);
   const [unpaid, setUnpaid] = useState([]);
+  const [supplierPayments, setSupplierPayments] = useState([]);
+  const [invoicesById, setInvoicesById] = useState(new Map());
   const [suppliers, setSuppliers] = useState(new Map());
 
   const refresh = useCallback(async () => {
@@ -78,21 +82,26 @@ export function MoneyPage({ userId }) {
           syncMoneyFromServer(),
         ]);
       }
-      const [ov, led, lens, cash, upi, unpaidInv, sups] = await Promise.all([
-        getMoneyOverview(),
-        listBankLedger(40),
-        listLendersWithBalances(),
-        getUndepositedCashDays(),
-        getUnconfirmedUpiDays(),
-        listUnpaidPurchaseInvoices(),
-        localDb.suppliers.toArray(),
-      ]);
+      const [ov, led, lens, cash, upi, unpaidInv, pays, invs, sups] =
+        await Promise.all([
+          getMoneyOverview(),
+          listBankLedger(40),
+          listLendersWithBalances(),
+          getUndepositedCashDays(),
+          getUnconfirmedUpiDays(),
+          listUnpaidPurchaseInvoices(),
+          listSupplierPayments(50),
+          localDb.purchase_invoices.toArray(),
+          localDb.suppliers.toArray(),
+        ]);
       setOverview(ov);
       setLedger(led);
       setLenders(lens);
       setCashDays(cash);
       setUpiDays(upi);
       setUnpaid(unpaidInv);
+      setSupplierPayments(pays);
+      setInvoicesById(new Map(invs.map((i) => [i.id, i])));
       setSuppliers(new Map(sups.map((s) => [s.id, s])));
     } catch (err) {
       setError(err.message || "Could not load money data.");
@@ -169,7 +178,10 @@ export function MoneyPage({ userId }) {
           userId={userId}
           unpaid={unpaid}
           suppliers={suppliers}
+          invoicesById={invoicesById}
+          payments={supplierPayments}
           bankBalance={overview?.bankBalance || 0}
+          cashOnHand={overview?.cashOnHand || 0}
           onChanged={refresh}
         />
       ) : null}
@@ -180,15 +192,20 @@ export function MoneyPage({ userId }) {
 function OverviewTab({ overview, ledger }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <KpiCard label="Bank balance" value={formatInr(overview.bankBalance)} />
         <KpiCard
-          label="Undeposited cash"
+          label="Cash on hand"
+          value={formatInr(overview.cashOnHand ?? 0)}
+          sub="Loan cash · pay suppliers"
+        />
+        <KpiCard
+          label="Undeposited sales cash"
           value={formatInr(overview.undepositedCash)}
           sub={
             overview.undepositedDayCount
-              ? `${overview.undepositedDayCount} day(s)`
-              : "All clear"
+              ? `${overview.undepositedDayCount} day(s) · deposit only`
+              : "All clear · deposit only"
           }
         />
         <KpiCard
@@ -248,10 +265,13 @@ function LendersTab({ userId, lenders, onChanged }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
+  const [interestRate, setInterestRate] = useState("");
   const [amount, setAmount] = useState("");
   const [entryType, setEntryType] = useState("RECEIVED");
   const [entryDate, setEntryDate] = useState(businessDateIST());
   const [loanNote, setLoanNote] = useState("");
+  const [paymentMode, setPaymentMode] = useState("CASH");
+  const [repayInfo, setRepayInfo] = useState(null);
   const [history, setHistory] = useState([]);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -259,11 +279,26 @@ function LendersTab({ userId, lenders, onChanged }) {
   async function openLoan(lender, type) {
     setLoanOpen(lender);
     setEntryType(type);
-    setAmount("");
     setLoanNote("");
     setEntryDate(businessDateIST());
+    setPaymentMode("CASH");
     setError("");
     setHistory(await listLoanEntries(lender.id));
+    if (type === "REPAID") {
+      const info = await getLenderRepayBreakdown(lender.id, businessDateIST());
+      setRepayInfo(info);
+      setAmount(info.total > 0 ? String(info.total) : "");
+    } else {
+      setRepayInfo(null);
+      setAmount("");
+    }
+  }
+
+  async function refreshRepayInfo(date) {
+    if (!loanOpen || entryType !== "REPAID") return;
+    const info = await getLenderRepayBreakdown(loanOpen.id, date);
+    setRepayInfo(info);
+    setAmount(info.total > 0 ? String(info.total) : "");
   }
 
   async function openHistory(lender) {
@@ -276,11 +311,17 @@ function LendersTab({ userId, lenders, onChanged }) {
     setPending(true);
     setError("");
     try {
-      await createLender({ name, phone, notes });
+      await createLender({
+        name,
+        phone,
+        notes,
+        interestRateMonthly: interestRate,
+      });
       setAddOpen(false);
       setName("");
       setPhone("");
       setNotes("");
+      setInterestRate("");
       onChanged();
     } catch (err) {
       setError(err.message || "Could not save lender.");
@@ -302,6 +343,7 @@ function LendersTab({ userId, lenders, onChanged }) {
         entryDate,
         note: loanNote,
         userId,
+        paymentMode,
       });
       setLoanOpen(null);
       onChanged();
@@ -333,10 +375,23 @@ function LendersTab({ userId, lenders, onChanged }) {
               <div>
                 <p className="font-medium text-ink">{l.name}</p>
                 <p className="text-xs text-fog">
-                  {l.phone || "No phone"} · Outstanding{" "}
+                  {l.phone || "No phone"}
+                  {toNum(l.interest_rate_monthly) > 0
+                    ? ` · ${toNum(l.interest_rate_monthly)}%/mo`
+                    : ""}{" "}
+                  · Principal{" "}
                   <span className="font-semibold tabular-nums text-ink">
                     {formatInr(l.outstanding)}
                   </span>
+                  {toNum(l.interestDue) > 0 ? (
+                    <>
+                      {" "}
+                      · Interest due{" "}
+                      <span className="font-semibold tabular-nums text-ink">
+                        {formatInr(l.interestDue)}
+                      </span>
+                    </>
+                  ) : null}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -359,7 +414,9 @@ function LendersTab({ userId, lenders, onChanged }) {
                 <Button
                   type="button"
                   className="text-xs"
-                  disabled={toNum(l.outstanding) <= 0}
+                  disabled={
+                    toNum(l.outstanding) <= 0 && toNum(l.interestDue) <= 0
+                  }
                   onClick={() => openLoan(l, "REPAID")}
                 >
                   Repay
@@ -382,6 +439,21 @@ function LendersTab({ userId, lenders, onChanged }) {
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
           </div>
           <div>
+            <Label>Interest % / month (optional)</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={interestRate}
+              onChange={(e) => setInterestRate(e.target.value)}
+              placeholder="e.g. 2"
+            />
+            <p className="mt-1 text-xs text-fog">
+              Simple interest from each loan date until you repay. Leave blank
+              for no interest.
+            </p>
+          </div>
+          <div>
             <Label>Notes</Label>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
@@ -397,10 +469,19 @@ function LendersTab({ userId, lenders, onChanged }) {
         title={`Loan history — ${historyOpen?.name || ""}`}
       >
         <p className="mb-3 text-sm text-fog">
-          Outstanding{" "}
+          Principal{" "}
           <span className="font-semibold tabular-nums text-ink">
             {formatInr(historyOpen?.outstanding)}
           </span>
+          {toNum(historyOpen?.interestDue) > 0 ? (
+            <>
+              {" "}
+              · Interest due{" "}
+              <span className="font-semibold tabular-nums text-ink">
+                {formatInr(historyOpen.interestDue)}
+              </span>
+            </>
+          ) : null}
         </p>
         {history.length === 0 ? (
           <p className="py-6 text-center text-sm text-silver">
@@ -410,6 +491,11 @@ function LendersTab({ userId, lenders, onChanged }) {
           <div className="max-h-[60vh] space-y-2 overflow-y-auto">
             {history.map((h) => {
               const received = h.entry_type === "RECEIVED";
+              const mode = h.payment_mode === "CASH" ? "Cash" : "Bank";
+              const interestPart = toNum(h.interest_amount);
+              const principalPart = round2Display(
+                toNum(h.amount) - interestPart,
+              );
               return (
                 <div
                   key={h.id}
@@ -418,10 +504,13 @@ function LendersTab({ userId, lenders, onChanged }) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-ink">
-                        {received ? "Loan received" : "Repaid"}
+                        {received ? "Loan received" : "Repaid"} · {mode}
                       </p>
                       <p className="mt-0.5 text-xs text-fog">
                         {formatDateIST(h.entry_date + "T12:00:00")}
+                        {!received && interestPart > 0
+                          ? ` · principal ${formatInr(principalPart)} + interest ${formatInr(interestPart)}`
+                          : ""}
                         {h.note ? ` · ${h.note}` : ""}
                       </p>
                     </div>
@@ -453,6 +542,48 @@ function LendersTab({ userId, lenders, onChanged }) {
         {error ? <p className="mb-2 text-sm text-danger">{error}</p> : null}
         <form onSubmit={saveLoan} className="space-y-3">
           <div>
+            <Label>Via</Label>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              {[
+                { id: "CASH", label: "Cash" },
+                { id: "BANK", label: "Bank" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setPaymentMode(opt.id)}
+                  className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                    paymentMode === opt.id
+                      ? "border-action bg-action text-canvas"
+                      : "border-ash bg-paper text-fog hover:bg-canvas hover:text-ink"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-fog">
+              {paymentMode === "CASH"
+                ? entryType === "RECEIVED"
+                  ? "Adds to cash on hand (separate from sales till)."
+                  : "Pays from cash on hand."
+                : entryType === "RECEIVED"
+                  ? "Adds to bank balance."
+                  : "Deducts from bank balance."}
+            </p>
+          </div>
+          {entryType === "REPAID" && repayInfo ? (
+            <p className="rounded-lg border border-ash bg-canvas px-3 py-2 text-xs text-fog">
+              Principal {formatInr(repayInfo.principal)} · Interest{" "}
+              {formatInr(repayInfo.interest)}
+              {repayInfo.rateMonthly > 0
+                ? ` (${repayInfo.rateMonthly}%/mo)`
+                : ""}{" "}
+              · Total {formatInr(repayInfo.total)}. Payment goes to interest
+              first, then principal.
+            </p>
+          ) : null}
+          <div>
             <Label>Amount (₹)</Label>
             <Input
               type="number"
@@ -468,7 +599,10 @@ function LendersTab({ userId, lenders, onChanged }) {
             <Input
               type="date"
               value={entryDate}
-              onChange={(e) => setEntryDate(e.target.value)}
+              onChange={(e) => {
+                setEntryDate(e.target.value);
+                refreshRepayInfo(e.target.value);
+              }}
               required
             />
           </div>
@@ -494,7 +628,8 @@ function LendersTab({ userId, lenders, onChanged }) {
                 <div key={h.id} className="flex justify-between gap-2 text-fog">
                   <span>
                     {formatDateIST(h.entry_date + "T12:00:00")} ·{" "}
-                    {h.entry_type === "RECEIVED" ? "Received" : "Repaid"}
+                    {h.entry_type === "RECEIVED" ? "Received" : "Repaid"} ·{" "}
+                    {h.payment_mode === "CASH" ? "Cash" : "Bank"}
                   </span>
                   <span className="tabular-nums text-ink">{formatInr(h.amount)}</span>
                 </div>
@@ -505,6 +640,10 @@ function LendersTab({ userId, lenders, onChanged }) {
       </Modal>
     </div>
   );
+}
+
+function round2Display(n) {
+  return Math.round((toNum(n) + Number.EPSILON) * 100) / 100;
 }
 
 function CashDepositTab({ userId, days, total, onChanged }) {
@@ -539,7 +678,8 @@ function CashDepositTab({ userId, days, total, onChanged }) {
           {formatInr(total)}
         </p>
         <p className="mt-1 text-xs text-fog">
-          Sum of daily cash sales minus cash expenses not yet deposited.
+          Sales till cash only (bills − till expenses). Deposit to bank — not
+          for suppliers or loan repay. Loan cash is separate (“Cash on hand”).
         </p>
       </Card>
 
@@ -560,8 +700,11 @@ function CashDepositTab({ userId, days, total, onChanged }) {
                   <div>
                     <p className="font-medium text-ink">{d.label}</p>
                     <p className="text-xs text-fog">
-                      Sales {formatInr(d.cashSales)} − expenses{" "}
+                      Sales {formatInr(d.cashSales)} − till expenses{" "}
                       {formatInr(d.cashExpenses)}
+                      {d.deposited > 0
+                        ? ` · deposited ${formatInr(d.deposited)}`
+                        : ""}
                     </p>
                   </div>
                   <p className="tabular-nums font-semibold text-ink">
@@ -683,11 +826,21 @@ function UpiDepositTab({ userId, days, onChanged }) {
   );
 }
 
-function PaySupplierTab({ userId, unpaid, suppliers, bankBalance, onChanged }) {
+function PaySupplierTab({
+  userId,
+  unpaid,
+  suppliers,
+  invoicesById,
+  payments,
+  bankBalance,
+  cashOnHand,
+  onChanged,
+}) {
   const [invoiceId, setInvoiceId] = useState("");
   const [amount, setAmount] = useState("");
   const [entryDate, setEntryDate] = useState(businessDateIST());
   const [note, setNote] = useState("");
+  const [paymentMode, setPaymentMode] = useState("BANK");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -712,11 +865,13 @@ function PaySupplierTab({ userId, unpaid, suppliers, bankBalance, onChanged }) {
         entryDate,
         note,
         userId,
+        paymentMode,
       });
       setInvoiceId("");
       setAmount("");
       setEntryDate(businessDateIST());
       setNote("");
+      setPaymentMode("BANK");
       onChanged();
     } catch (err) {
       setError(err.message || "Payment failed.");
@@ -727,19 +882,28 @@ function PaySupplierTab({ userId, unpaid, suppliers, bankBalance, onChanged }) {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <p className="text-sm text-fog">Available bank balance</p>
-        <p className="text-xl font-bold tabular-nums text-ink">
-          {formatInr(bankBalance)}
-        </p>
-        <p className="mt-2 text-xs text-fog">
-          Or open{" "}
-          <Link className="text-action underline" to="/purchases">
-            Purchases
-          </Link>{" "}
-          to see invoice payment status.
-        </p>
-      </Card>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Card>
+          <p className="text-sm text-fog">Bank balance</p>
+          <p className="text-xl font-bold tabular-nums text-ink">
+            {formatInr(bankBalance)}
+          </p>
+        </Card>
+        <Card>
+          <p className="text-sm text-fog">Cash on hand</p>
+          <p className="text-xl font-bold tabular-nums text-ink">
+            {formatInr(cashOnHand)}
+          </p>
+          <p className="mt-1 text-xs text-fog">From cash loans — for paying</p>
+        </Card>
+      </div>
+      <p className="text-xs text-fog">
+        Undeposited sales cash is separate (Cash deposit only). Or open{" "}
+        <Link className="text-action underline" to="/purchases">
+          Purchases
+        </Link>{" "}
+        for invoice status.
+      </p>
 
       {unpaid.length === 0 ? (
         <Card className="py-8 text-center text-sm text-silver">
@@ -782,6 +946,33 @@ function PaySupplierTab({ userId, unpaid, suppliers, bankBalance, onChanged }) {
               </p>
             ) : null}
             <div>
+              <Label>Pay from</Label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {[
+                  { id: "CASH", label: "Cash" },
+                  { id: "BANK", label: "Bank" },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setPaymentMode(opt.id)}
+                    className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                      paymentMode === opt.id
+                        ? "border-action bg-action text-canvas"
+                        : "border-ash bg-paper text-fog hover:bg-canvas hover:text-ink"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            <p className="mt-1.5 text-xs text-fog">
+              {paymentMode === "CASH"
+                ? "Uses cash on hand (loan cash) — not sales till cash."
+                : "Deducts from bank balance."}
+            </p>
+            </div>
+            <div>
               <Label>Pay amount (₹)</Label>
               <Input
                 type="number"
@@ -806,11 +997,66 @@ function PaySupplierTab({ userId, unpaid, suppliers, bankBalance, onChanged }) {
               <Input value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
             <Button type="submit" disabled={pending || !invoiceId} className="w-full">
-              {pending ? "Paying…" : "Pay from bank"}
+              {pending
+                ? "Paying…"
+                : paymentMode === "CASH"
+                  ? "Pay from cash"
+                  : "Pay from bank"}
             </Button>
           </form>
         </Card>
       )}
+
+      <Card>
+        <h2 className="mb-3 font-semibold text-ink">Payment history</h2>
+        {payments.length === 0 ? (
+          <p className="text-sm text-silver">No supplier payments yet.</p>
+        ) : (
+          <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+            {payments.map((p) => {
+              const invRow = invoicesById.get(p.purchase_invoice_id);
+              const sup = suppliers.get(p.supplier_id);
+              const mode = p.payment_mode === "CASH" ? "Cash" : "Bank";
+              const payable = invRow ? purchasePayableTotal(invRow) : 0;
+              const paid = toNum(invRow?.amount_paid);
+              const rem = invRow
+                ? Math.max(
+                    0,
+                    Math.round((payable - paid + Number.EPSILON) * 100) / 100,
+                  )
+                : null;
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-start justify-between gap-3 border-b border-ash py-2 text-sm last:border-0"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">
+                      {invRow?.invoice_number || "Invoice"} · {mode}
+                    </p>
+                    <p className="text-xs text-fog">
+                      {formatDateIST(p.entry_date + "T12:00:00")}
+                      {sup ? ` · ${sup.name}` : ""}
+                      {invRow
+                        ? ` · paid ${formatInr(paid)} of ${formatInr(payable)}`
+                        : ""}
+                      {rem != null && rem > 0.009
+                        ? ` · remaining ${formatInr(rem)}`
+                        : rem != null
+                          ? " · fully paid"
+                          : ""}
+                      {p.note ? ` · ${p.note}` : ""}
+                    </p>
+                  </div>
+                  <p className="shrink-0 font-semibold tabular-nums text-ink">
+                    −{formatInr(p.amount)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
