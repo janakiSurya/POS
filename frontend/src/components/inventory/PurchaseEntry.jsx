@@ -22,6 +22,7 @@ import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
 import { ManualLineCalcHint } from "./ManualLineCalcHint";
 import { SupplierSelect } from "./SupplierSelect";
 import { LocalBuyForm } from "./LocalBuyForm";
+import { PartSuggestInput } from "./PartSuggestInput";
 import { compareInvoiceCalculation } from "../../lib/purchaseCalculations";
 import { PageHeader } from "../shared/PageHeader";
 
@@ -342,18 +343,50 @@ export function PurchaseEntry({ profile, isOwner }) {
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <Label className="text-xs">Part code</Label>
-                <Input
-                  placeholder="Part code"
+                <PartSuggestInput
+                  scope="gst"
+                  placeholder="Type code — pick GST part if exists"
                   value={l.part_number}
-                  onChange={(e) => updateLine(idx, { part_number: e.target.value })}
+                  onChange={(v) => updateLine(idx, { part_number: v })}
+                  onPick={(p) =>
+                    updateLine(idx, {
+                      part_number: p.part_number || "",
+                      description: p.name || l.description,
+                      mrp:
+                        toNum(p.selling_price) > 0
+                          ? String(p.selling_price)
+                          : l.mrp,
+                      unit_cost:
+                        toNum(p.purchase_price) > 0
+                          ? String(p.purchase_price)
+                          : l.unit_cost,
+                      uom: p.uom || l.uom || "PCS",
+                    })
+                  }
                 />
               </div>
               <div>
                 <Label className="text-xs">Description</Label>
-                <Input
+                <PartSuggestInput
+                  scope="gst"
                   placeholder="Description"
                   value={l.description}
-                  onChange={(e) => updateLine(idx, { description: e.target.value })}
+                  onChange={(v) => updateLine(idx, { description: v })}
+                  onPick={(p) =>
+                    updateLine(idx, {
+                      part_number: p.part_number || l.part_number,
+                      description: p.name || "",
+                      mrp:
+                        toNum(p.selling_price) > 0
+                          ? String(p.selling_price)
+                          : l.mrp,
+                      unit_cost:
+                        toNum(p.purchase_price) > 0
+                          ? String(p.purchase_price)
+                          : l.unit_cost,
+                      uom: p.uom || l.uom || "PCS",
+                    })
+                  }
                 />
               </div>
               <div>

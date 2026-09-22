@@ -7,6 +7,7 @@ import { Button } from "../ui/Button";
 import { Input, Label } from "../ui/Input";
 import { Card } from "../ui/Card";
 import { SupplierSelect } from "./SupplierSelect";
+import { PartSuggestInput } from "./PartSuggestInput";
 
 function emptyLine() {
   return {
@@ -183,18 +184,52 @@ export function LocalBuyForm({ profile, onSaved }) {
             </div>
             <div>
               <Label className="text-xs">Item name</Label>
-              <Input
+              <PartSuggestInput
+                scope="local"
                 value={l.itemName}
-                onChange={(e) => updateLine(idx, { itemName: e.target.value })}
-                placeholder="e.g. MRF tires"
+                onChange={(v) => updateLine(idx, { itemName: v })}
+                onPick={(p) =>
+                  updateLine(idx, {
+                    itemName: p.name || "",
+                    partNumber: p.part_number || "",
+                    costPerUnit:
+                      toNum(p.purchase_price) > 0
+                        ? String(p.purchase_price)
+                        : l.costPerUnit,
+                    sellingPrice:
+                      toNum(p.selling_price) > 0
+                        ? String(p.selling_price)
+                        : l.sellingPrice,
+                  })
+                }
+                placeholder="Type name — pick local part if already bought"
                 required={idx === 0}
               />
+              <p className="mt-0.5 text-[11px] text-silver">
+                Only local (no-GST) parts are suggested — pick to avoid
+                duplicates.
+              </p>
             </div>
             <div>
               <Label className="text-xs">Part code (optional)</Label>
-              <Input
+              <PartSuggestInput
+                scope="local"
                 value={l.partNumber}
-                onChange={(e) => updateLine(idx, { partNumber: e.target.value })}
+                onChange={(v) => updateLine(idx, { partNumber: v })}
+                onPick={(p) =>
+                  updateLine(idx, {
+                    itemName: p.name || l.itemName,
+                    partNumber: p.part_number || "",
+                    costPerUnit:
+                      toNum(p.purchase_price) > 0
+                        ? String(p.purchase_price)
+                        : l.costPerUnit,
+                    sellingPrice:
+                      toNum(p.selling_price) > 0
+                        ? String(p.selling_price)
+                        : l.sellingPrice,
+                  })
+                }
                 placeholder="Auto LOCAL-… if blank"
               />
             </div>
