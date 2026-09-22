@@ -25,6 +25,7 @@ import {
   payPurchaseInvoice,
   purchasePayableTotal,
   recordLoanEntry,
+  updateLoanEntry,
   getLenderRepayBreakdown,
   syncMoneyFromServer,
 } from "../../lib/bank";
@@ -205,12 +206,12 @@ function OverviewTab({ overview, movements }) {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <KpiCard label="Bank balance" value={formatInr(overview.bankBalance)} />
         <KpiCard
-          label="Cash on hand"
+          label="Cash in hand"
           value={formatInr(overview.cashOnHand ?? 0)}
-          sub="Loan cash · pay suppliers"
+          sub="From loans · for paying"
         />
         <KpiCard
-          label="Undeposited sales cash"
+          label="Cash (from bills)"
           value={formatInr(overview.undepositedCash)}
           sub={
             overview.undepositedDayCount
@@ -273,7 +274,7 @@ function OverviewTab({ overview, movements }) {
         ) : (
           <div className="max-h-[60vh] space-y-2 overflow-y-auto">
             {filtered.map((r) => {
-              const via = r.payment_mode === "CASH" ? "Cash" : "Bank";
+              const via = r.payment_mode === "CASH" ? "Cash in hand" : "Bank";
               const partyBit =
                 r.entry_type === "LOAN_IN" && r.partyName
                   ? ` from ${r.partyName}`
@@ -332,8 +333,54 @@ function LendersTab({ userId, lenders, onChanged }) {
   const [paymentMode, setPaymentMode] = useState("CASH");
   const [repayInfo, setRepayInfo] = useState(null);
   const [history, setHistory] = useState([]);
+  const [editEntry, setEditEntry] = useState(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editDate, setEditDate] = useState(businessDateIST());
+  const [editNote, setEditNote] = useState("");
+  const [editMode, setEditMode] = useState("CASH");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+
+  function openEditEntry(h) {
+    setEditEntry(h);
+    setEditAmount(String(toNum(h.amount)));
+    setEditDate(String(h.entry_date).slice(0, 10));
+    setEditNote(h.note || "");
+    setEditMode(h.payment_mode === "CASH" ? "CASH" : "BANK");
+    setError("");
+  }
+
+  async function saveEditEntry(e) {
+    e.preventDefault();
+    if (!editEntry || !historyOpen) return;
+    setPending(true);
+    setError("");
+    try {
+      await updateLoanEntry({
+        entryId: editEntry.id,
+        amount: editAmount,
+        entryDate: editDate,
+        note: editNote,
+        paymentMode: editMode,
+      });
+      setEditEntry(null);
+      const [rows, breakdown] = await Promise.all([
+        listLoanEntries(historyOpen.id),
+        getLenderRepayBreakdown(historyOpen.id),
+      ]);
+      setHistory(rows);
+      setHistoryOpen({
+        ...historyOpen,
+        outstanding: breakdown.principal,
+        interestDue: breakdown.interest,
+      });
+      onChanged();
+    } catch (err) {
+      setError(err.message || "Could not update entry.");
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function openLoan(lender, type) {
     setLoanOpen(lender);
@@ -524,7 +571,11 @@ function LendersTab({ userId, lenders, onChanged }) {
 
       <Modal
         open={Boolean(historyOpen)}
-        onClose={() => setHistoryOpen(null)}
+        onClose={() => {
+          setHistoryOpen(null);
+          setEditEntry(null);
+          setError("");
+        }}
         title={`Loan history — ${historyOpen?.name || ""}`}
       >
         <p className="mb-3 text-sm text-fog">
@@ -542,6 +593,9 @@ function LendersTab({ userId, lenders, onChanged }) {
             </>
           ) : null}
         </p>
+        {error && editEntry ? (
+          <p className="mb-2 text-sm text-danger">{error}</p>
+        ) : null}
         {history.length === 0 ? (
           <p className="py-6 text-center text-sm text-silver">
             No loan entries yet for this lender.
@@ -550,11 +604,94 @@ function LendersTab({ userId, lenders, onChanged }) {
           <div className="max-h-[60vh] space-y-2 overflow-y-auto">
             {history.map((h) => {
               const received = h.entry_type === "RECEIVED";
-              const mode = h.payment_mode === "CASH" ? "Cash" : "Bank";
+              const mode = h.payment_mode === "CASH" ? "Cash in hand" : "Bank";
               const interestPart = toNum(h.interest_amount);
               const principalPart = round2Display(
                 toNum(h.amount) - interestPart,
               );
+              const editing = editEntry?.id === h.id;
+              if (editing) {
+                return (
+                  <form
+                    key={h.id}
+                    onSubmit={saveEditEntry}
+                    className="space-y-3 rounded-lg border border-action bg-paper px-3 py-3"
+                  >
+                    <p className="text-sm font-medium text-ink">
+                      Edit {received ? "loan received" : "repayment"}
+                    </p>
+                    <div>
+                      <Label>Via</Label>
+                      <div className="mt-1 grid grid-cols-2 gap-2">
+                        {[
+                          { id: "CASH", label: "Cash in hand" },
+                          { id: "BANK", label: "Bank" },
+                        ].map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setEditMode(opt.id)}
+                            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                              editMode === opt.id
+                                ? "border-action bg-action text-canvas"
+                                : "border-ash bg-canvas text-fog hover:text-ink"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-xs text-fog">
+                        Fix mistakes like cash in hand recorded as bank (or the reverse).
+                      </p>
+                    </div>
+                    <div>
+                      <Label>Amount (₹)</Label>
+                      <Input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={editAmount}
+                        onChange={(ev) => setEditAmount(ev.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Date</Label>
+                      <Input
+                        type="date"
+                        value={editDate}
+                        onChange={(ev) => setEditDate(ev.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Note</Label>
+                      <Input
+                        value={editNote}
+                        onChange={(ev) => setEditNote(ev.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="flex-1"
+                        disabled={pending}
+                        onClick={() => {
+                          setEditEntry(null);
+                          setError("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" className="flex-1" disabled={pending}>
+                        {pending ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
+                  </form>
+                );
+              }
               return (
                 <div
                   key={h.id}
@@ -573,14 +710,23 @@ function LendersTab({ userId, lenders, onChanged }) {
                         {h.note ? ` · ${h.note}` : ""}
                       </p>
                     </div>
-                    <p
-                      className={`shrink-0 text-sm font-semibold tabular-nums ${
-                        received ? "text-success" : "text-danger"
-                      }`}
-                    >
-                      {received ? "+" : "−"}
-                      {formatInr(h.amount)}
-                    </p>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <p
+                        className={`text-sm font-semibold tabular-nums ${
+                          received ? "text-success" : "text-danger"
+                        }`}
+                      >
+                        {received ? "+" : "−"}
+                        {formatInr(h.amount)}
+                      </p>
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-action hover:underline"
+                        onClick={() => openEditEntry(h)}
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -604,7 +750,7 @@ function LendersTab({ userId, lenders, onChanged }) {
             <Label>Via</Label>
             <div className="mt-1 grid grid-cols-2 gap-2">
               {[
-                { id: "CASH", label: "Cash" },
+                { id: "CASH", label: "Cash in hand" },
                 { id: "BANK", label: "Bank" },
               ].map((opt) => (
                 <button
@@ -624,8 +770,8 @@ function LendersTab({ userId, lenders, onChanged }) {
             <p className="mt-1.5 text-xs text-fog">
               {paymentMode === "CASH"
                 ? entryType === "RECEIVED"
-                  ? "Adds to cash on hand (separate from sales till)."
-                  : "Pays from cash on hand."
+                  ? "Adds to cash in hand (loan money — separate from sales cash)."
+                  : "Pays from cash in hand (loan money)."
                 : entryType === "RECEIVED"
                   ? "Adds to bank balance."
                   : "Deducts from bank balance."}
@@ -688,7 +834,7 @@ function LendersTab({ userId, lenders, onChanged }) {
                   <span>
                     {formatDateIST(h.entry_date + "T12:00:00")} ·{" "}
                     {h.entry_type === "RECEIVED" ? "Received" : "Repaid"} ·{" "}
-                    {h.payment_mode === "CASH" ? "Cash" : "Bank"}
+                    {h.payment_mode === "CASH" ? "Cash in hand" : "Bank"}
                   </span>
                   <span className="tabular-nums text-ink">{formatInr(h.amount)}</span>
                 </div>
@@ -738,7 +884,7 @@ function CashDepositTab({ userId, days, total, onChanged }) {
         </p>
         <p className="mt-1 text-xs text-fog">
           Sales till cash only (bills − till expenses). Deposit to bank — not
-          for suppliers or loan repay. Loan cash is separate (“Cash on hand”).
+          for suppliers or loan repay. Cash in hand (from loans) is separate.
         </p>
       </Card>
 
@@ -949,15 +1095,15 @@ function PaySupplierTab({
           </p>
         </Card>
         <Card>
-          <p className="text-sm text-fog">Cash on hand</p>
+          <p className="text-sm text-fog">Cash in hand</p>
           <p className="text-xl font-bold tabular-nums text-ink">
             {formatInr(cashOnHand)}
           </p>
-          <p className="mt-1 text-xs text-fog">From cash loans — for paying</p>
+          <p className="mt-1 text-xs text-fog">From loans — for paying</p>
         </Card>
       </div>
       <p className="text-xs text-fog">
-        Undeposited sales cash is separate (Cash deposit only). Or open{" "}
+        Cash (from bills) is separate — deposit only on Cash deposit. Or open{" "}
         <Link className="text-action underline" to="/purchases">
           Purchases
         </Link>{" "}
@@ -1008,7 +1154,7 @@ function PaySupplierTab({
               <Label>Pay from</Label>
               <div className="mt-1 grid grid-cols-2 gap-2">
                 {[
-                  { id: "CASH", label: "Cash" },
+                  { id: "CASH", label: "Cash in hand" },
                   { id: "BANK", label: "Bank" },
                 ].map((opt) => (
                   <button
@@ -1027,7 +1173,7 @@ function PaySupplierTab({
               </div>
             <p className="mt-1.5 text-xs text-fog">
               {paymentMode === "CASH"
-                ? "Uses cash on hand (loan cash) — not sales till cash."
+                ? "Uses cash in hand (from loans) — not sales cash from bills."
                 : "Deducts from bank balance."}
             </p>
             </div>
@@ -1059,7 +1205,7 @@ function PaySupplierTab({
               {pending
                 ? "Paying…"
                 : paymentMode === "CASH"
-                  ? "Pay from cash"
+                  ? "Pay from cash in hand"
                   : "Pay from bank"}
             </Button>
           </form>
@@ -1075,7 +1221,7 @@ function PaySupplierTab({
             {payments.map((p) => {
               const invRow = invoicesById.get(p.purchase_invoice_id);
               const sup = suppliers.get(p.supplier_id);
-              const mode = p.payment_mode === "CASH" ? "Cash" : "Bank";
+              const mode = p.payment_mode === "CASH" ? "Cash in hand" : "Bank";
               const payable = invRow ? purchasePayableTotal(invRow) : 0;
               const paid = toNum(invRow?.amount_paid);
               const rem = invRow

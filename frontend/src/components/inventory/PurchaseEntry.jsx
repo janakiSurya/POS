@@ -17,6 +17,7 @@ import { hydrateProducts } from "../../lib/productHydrate";
 import { FreshKeys, invalidateFresh, markFresh } from "../../lib/freshSync";
 import { businessDateIST } from "../../lib/businessDay";
 import { PurchaseInvoiceHistory } from "./PurchaseInvoiceHistory";
+import { PurchaseSupplierBalances } from "./PurchaseSupplierBalances";
 import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
 import { ManualLineCalcHint } from "./ManualLineCalcHint";
 import { SupplierSelect } from "./SupplierSelect";
@@ -24,6 +25,11 @@ import { compareInvoiceCalculation } from "../../lib/purchaseCalculations";
 import { PageHeader } from "../shared/PageHeader";
 
 const UOM_OPTIONS = ["PCS", "SET", "KG", "LTR", "BOX", "PAIR"];
+
+const HISTORY_TABS = [
+  { id: "invoices", label: "Invoices" },
+  { id: "balances", label: "Supplier balances" },
+];
 
 export function PurchaseEntry({ profile, isOwner }) {
   const [supplierId, setSupplierId] = useState("");
@@ -37,6 +43,7 @@ export function PurchaseEntry({ profile, isOwner }) {
   const [error, setError] = useState("");
   const [costPrompt, setCostPrompt] = useState(null);
   const [historyKey, setHistoryKey] = useState(0);
+  const [historyTab, setHistoryTab] = useState("invoices");
 
   function emptyLine() {
     return {
@@ -493,7 +500,29 @@ export function PurchaseEntry({ profile, isOwner }) {
         ) : null}
       </Modal>
 
-      <PurchaseInvoiceHistory refreshKey={historyKey} />
+      <div className="space-y-4 border-t border-ash pt-6">
+        <div className="flex flex-wrap gap-1.5">
+          {HISTORY_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setHistoryTab(t.id)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                historyTab === t.id
+                  ? "bg-action text-canvas"
+                  : "border border-ash bg-canvas text-fog hover:bg-paper hover:text-ink"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {historyTab === "invoices" ? (
+          <PurchaseInvoiceHistory refreshKey={historyKey} />
+        ) : (
+          <PurchaseSupplierBalances refreshKey={historyKey} />
+        )}
+      </div>
     </div>
   );
 }

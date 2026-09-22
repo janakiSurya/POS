@@ -83,7 +83,10 @@ export async function getBankBalance() {
   return round2(bal);
 }
 
-/** Write a bank OUT for an expense paid via bank. */
+/**
+ * Write an expense OUT from bank or loan cash (cash on hand).
+ * paymentMode: "BANK" (default) or "CASH".
+ */
 export async function recordBankExpenseOut({
   amount,
   entryDate,
@@ -91,12 +94,21 @@ export async function recordBankExpenseOut({
   userId,
   cashExpenseId = null,
   fixedCostLogId = null,
+  paymentMode = "BANK",
 }) {
   const amt = round2(amount);
   if (amt <= 0) throw new Error("Amount must be greater than zero.");
-  const bank = await getBankBalance();
-  if (amt > bank + 0.009) {
-    throw new Error(`Not enough bank balance (₹${bank}).`);
+  const mode = paymentMode === "CASH" ? "CASH" : "BANK";
+  if (mode === "BANK") {
+    const bank = await getBankBalance();
+    if (amt > bank + 0.009) {
+      throw new Error(`Not enough bank balance (₹${bank}).`);
+    }
+  } else {
+    const cash = await getCashOnHandBalance();
+    if (amt > cash + 0.009) {
+      throw new Error(`Not enough cash on hand (₹${cash}).`);
+    }
   }
   const ledger = {
     id: crypto.randomUUID(),
@@ -104,6 +116,7 @@ export async function recordBankExpenseOut({
     entry_type: "EXPENSE",
     amount: amt,
     direction: "OUT",
+    payment_mode: mode,
     note: note?.trim() || "Expense",
     cash_expense_id: cashExpenseId,
     fixed_cost_log_id: fixedCostLogId,
@@ -155,8 +168,8 @@ export async function buildDailyCashBuckets() {
     bump(ymdFromIso(inv.created_at), "cashSales", toNum(inv.total_amount));
   }
   for (const e of expenses) {
-    // Till cash only — UPI/BANK expenses do not reduce undeposited sales cash
-    if (e.payment_mode === "UPI" || e.payment_mode === "BANK") continue;
+    // Till cash only — UPI/BANK/HAND expenses do not reduce undeposited sales cash
+    if (e.payment_mode === "UPI" || e.payment_mode === "BANK" || e.payment_mode === "HAND") continue;
     bump(ymdFromIso(e.created_at), "cashExpenses", toNum(e.amount));
   }
   for (const [date, amt] of depositedByDate) {
@@ -550,6 +563,275 @@ export async function listLoanEntries(lenderId) {
   return rows.sort((a, b) =>
     String(b.entry_date).localeCompare(String(a.entry_date)),
   );
+}
+
+async function findLedgerForLoanEntry(loanEntryId) {
+  const rows = await localDb.bank_ledger.toArray();
+  return rows.find((r) => r.loan_entry_id === loanEntryId) || null;
+}
+
+/**
+ * Correct a loan history row (amount / Cash↔Bank / date / note).
+ * Keeps bank_ledger and cash-on-hand in sync.
+ */
+export async function updateLoanEntry({
+  entryId,
+  amount,
+  entryDate,
+  note,
+  paymentMode,
+}) {
+  const existing = await localDb.loan_entries.get(entryId);
+  if (!existing) throw new Error("Loan entry not found.");
+
+  const amt = round2(amount);
+  if (amt <= 0) throw new Error("Amount must be greater than zero.");
+  const mode = normalizeLoanPaymentMode(paymentMode);
+  const date = entryDate || existing.entry_date || businessDateIST();
+  const noteVal =
+    note === undefined ? existing.note : note?.trim() || null;
+  const oldMode = normalizeLoanPaymentMode(existing.payment_mode);
+  const oldAmt = toNum(existing.amount);
+
+  let interestAmount = 0;
+  if (existing.entry_type === "REPAID") {
+    // Treat as if this repayment is not yet applied, then re-split interest.
+    const all = await localDb.loan_entries
+      .where("lender_id")
+      .equals(existing.lender_id)
+      .toArray();
+    let principal = 0;
+    for (const e of all) {
+      if (e.id === entryId) continue;
+      if (e.entry_type === "RECEIVED") principal += toNum(e.amount);
+      else if (e.entry_type === "REPAID") {
+        principal -= toNum(e.amount) - toNum(e.interest_amount);
+      }
+    }
+    principal = round2(Math.max(0, principal));
+
+    const lender = await localDb.lenders.get(existing.lender_id);
+    const rate = toNum(lender?.interest_rate_monthly);
+    let interest = 0;
+    if (rate > 0) {
+      // Rebuild tranches without this repayment (or without this receive if ever).
+      const others = all
+        .filter((e) => e.id !== entryId)
+        .sort((a, b) => {
+          const d = String(a.entry_date).localeCompare(String(b.entry_date));
+          if (d !== 0) return d;
+          return String(a.created_at || "").localeCompare(
+            String(b.created_at || ""),
+          );
+        });
+      const tranches = [];
+      for (const e of others) {
+        if (e.entry_type === "RECEIVED") {
+          tranches.push({
+            entry_date: String(e.entry_date).slice(0, 10),
+            remaining: toNum(e.amount),
+          });
+          continue;
+        }
+        if (e.entry_type !== "REPAID") continue;
+        let p = round2(toNum(e.amount) - toNum(e.interest_amount));
+        for (const t of tranches) {
+          if (p <= 0.009) break;
+          const take = Math.min(t.remaining, p);
+          t.remaining = round2(t.remaining - take);
+          p = round2(p - take);
+        }
+      }
+      const asOf = String(date).slice(0, 10);
+      for (const t of tranches.filter((x) => x.remaining > 0.009)) {
+        const days = daysBetweenYmd(t.entry_date, asOf);
+        interest += t.remaining * (rate / 100) * (days / 30);
+      }
+      interest = round2(interest);
+    }
+
+    const maxTotal = round2(principal + interest);
+    if (amt > maxTotal + 0.009) {
+      throw new Error(
+        `Repayment exceeds principal + interest (₹${maxTotal}).`,
+      );
+    }
+    interestAmount = round2(Math.min(amt, interest));
+    const principalPart = round2(amt - interestAmount);
+    if (principalPart > principal + 0.009) {
+      throw new Error(
+        `Principal portion exceeds outstanding (₹${principal}).`,
+      );
+    }
+  } else if (existing.entry_type === "RECEIVED") {
+    // Shrinking a receive must not leave principal negative after later repayments.
+    const all = await localDb.loan_entries
+      .where("lender_id")
+      .equals(existing.lender_id)
+      .toArray();
+    let bal = 0;
+    const sorted = [...all].sort((a, b) => {
+      const d = String(a.entry_date).localeCompare(String(b.entry_date));
+      if (d !== 0) return d;
+      return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+    });
+    for (const e of sorted) {
+      const eAmt = e.id === entryId ? amt : toNum(e.amount);
+      const eInt = e.id === entryId ? 0 : toNum(e.interest_amount);
+      if (e.entry_type === "RECEIVED") bal += eAmt;
+      else if (e.entry_type === "REPAID") bal -= eAmt - eInt;
+      if (bal < -0.009) {
+        throw new Error(
+          "Cannot reduce this loan: repayments already exceed the new amount.",
+        );
+      }
+    }
+  }
+
+  // Cash / bank affordability after reversing the old effect and applying the new one.
+  if (existing.entry_type === "REPAID" || mode === "CASH" || oldMode === "CASH") {
+    let cash = await getCashOnHandBalance();
+    if (oldMode === "CASH") {
+      if (existing.entry_type === "RECEIVED") cash -= oldAmt;
+      else cash += oldAmt;
+    }
+    if (mode === "CASH") {
+      if (existing.entry_type === "RECEIVED") cash += amt;
+      else cash -= amt;
+    }
+    if (cash < -0.009) {
+      throw new Error(
+        `Not enough cash on hand after this change (short ₹${round2(-cash)}).`,
+      );
+    }
+  }
+  if (existing.entry_type === "REPAID" || mode === "BANK" || oldMode === "BANK") {
+    let bank = await getBankBalance();
+    if (oldMode === "BANK") {
+      if (existing.entry_type === "RECEIVED") bank -= oldAmt;
+      else bank += oldAmt;
+    }
+    if (mode === "BANK") {
+      if (existing.entry_type === "RECEIVED") bank += amt;
+      else bank -= amt;
+    }
+    if (bank < -0.009) {
+      throw new Error(
+        `Not enough bank balance after this change (short ₹${round2(-bank)}).`,
+      );
+    }
+  }
+
+  const patch = {
+    ...existing,
+    amount: amt,
+    interest_amount:
+      existing.entry_type === "REPAID" ? interestAmount : 0,
+    payment_mode: mode,
+    entry_date: date,
+    note: noteVal,
+  };
+
+  const existingLedger = await findLedgerForLoanEntry(entryId);
+
+  if (supabase && isOnline()) {
+    const { data: eData, error: eErr } = await supabase
+      .from("loan_entries")
+      .update({
+        amount: patch.amount,
+        interest_amount: patch.interest_amount,
+        payment_mode: patch.payment_mode,
+        entry_date: patch.entry_date,
+        note: patch.note,
+      })
+      .eq("id", entryId)
+      .select()
+      .single();
+    if (eErr) throw eErr;
+    await localDb.loan_entries.put(eData);
+
+    if (mode === "BANK") {
+      const ledgerPayload = {
+        entry_date: date,
+        entry_type:
+          existing.entry_type === "RECEIVED" ? "LOAN_IN" : "LOAN_OUT",
+        amount: amt,
+        direction: existing.entry_type === "RECEIVED" ? "IN" : "OUT",
+        note: noteVal,
+        lender_id: existing.lender_id,
+        loan_entry_id: entryId,
+      };
+      if (existingLedger) {
+        const { data: lData, error: lErr } = await supabase
+          .from("bank_ledger")
+          .update(ledgerPayload)
+          .eq("id", existingLedger.id)
+          .select()
+          .single();
+        if (lErr) throw lErr;
+        await localDb.bank_ledger.put(lData);
+      } else {
+        const row = {
+          id: crypto.randomUUID(),
+          ...ledgerPayload,
+          created_by: existing.created_by,
+          created_at: new Date().toISOString(),
+        };
+        const { data: lData, error: lErr } = await supabase
+          .from("bank_ledger")
+          .insert(row)
+          .select()
+          .single();
+        if (lErr) throw lErr;
+        await localDb.bank_ledger.put(lData);
+      }
+    } else if (existingLedger) {
+      const { error: dErr } = await supabase
+        .from("bank_ledger")
+        .delete()
+        .eq("id", existingLedger.id);
+      if (dErr) throw dErr;
+      await localDb.bank_ledger.delete(existingLedger.id);
+    }
+
+    return eData;
+  }
+
+  await localDb.loan_entries.put(patch);
+
+  if (mode === "BANK") {
+    if (existingLedger) {
+      await localDb.bank_ledger.put({
+        ...existingLedger,
+        entry_date: date,
+        entry_type:
+          existing.entry_type === "RECEIVED" ? "LOAN_IN" : "LOAN_OUT",
+        amount: amt,
+        direction: existing.entry_type === "RECEIVED" ? "IN" : "OUT",
+        note: noteVal,
+        lender_id: existing.lender_id,
+        loan_entry_id: entryId,
+      });
+    } else {
+      await localDb.bank_ledger.put({
+        id: crypto.randomUUID(),
+        entry_date: date,
+        entry_type:
+          existing.entry_type === "RECEIVED" ? "LOAN_IN" : "LOAN_OUT",
+        amount: amt,
+        direction: existing.entry_type === "RECEIVED" ? "IN" : "OUT",
+        note: noteVal,
+        lender_id: existing.lender_id,
+        loan_entry_id: entryId,
+        created_by: existing.created_by,
+        created_at: new Date().toISOString(),
+      });
+    }
+  } else if (existingLedger) {
+    await localDb.bank_ledger.delete(existingLedger.id);
+  }
+
+  return patch;
 }
 
 // ─── Cash deposit ────────────────────────────────────────────────────────────

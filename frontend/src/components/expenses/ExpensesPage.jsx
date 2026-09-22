@@ -15,6 +15,7 @@ import {
   paymentModeLabel,
   saveTemplate,
 } from "../../lib/expenses";
+import { getBankBalance, getCashOnHandBalance, getUndepositedCashTotal } from "../../lib/bank";
 import { FreshKeys, invalidateFresh } from "../../lib/freshSync";
 import { formatInr, toNum } from "../../lib/format";
 import { Button } from "../ui/Button";
@@ -163,6 +164,9 @@ function MonthlyFixedTab({ userId }) {
   const [logNote, setLogNote] = useState("");
   const [logDate, setLogDate] = useState("");
   const [logPaymentMode, setLogPaymentMode] = useState("CASH");
+  const [bankBalance, setBankBalance] = useState(0);
+  const [cashInHand, setCashInHand] = useState(0);
+  const [salesCash, setSalesCash] = useState(0);
   const [error, setError] = useState("");
   const [logError, setLogError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -171,12 +175,18 @@ function MonthlyFixedTab({ userId }) {
 
   const load = useCallback(async (force = false) => {
     await syncFixedCostsIfNeeded(force);
-    const [ts, ls] = await Promise.all([
+    const [ts, ls, bank, hand, sales] = await Promise.all([
       getTemplates(),
       getFixedCostLogsForMonth(month),
+      getBankBalance(),
+      getCashOnHandBalance(),
+      getUndepositedCashTotal(),
     ]);
     setTemplates(ts);
     setLogs(ls);
+    setBankBalance(bank);
+    setCashInHand(hand);
+    setSalesCash(sales);
   }, [month]);
 
   useEffect(() => { load(false); }, [load]);
@@ -446,10 +456,32 @@ function MonthlyFixedTab({ userId }) {
         title={`Mark paid — ${logModal?.name ?? ""}`}
       >
         {logError ? <p className="mb-3 text-sm text-danger">{logError}</p> : null}
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          <div className="rounded-lg border border-ash bg-canvas px-2.5 py-2">
+            <p className="text-[11px] text-fog">Cash</p>
+            <p className="text-sm font-semibold tabular-nums text-ink">
+              {formatInr(salesCash)}
+            </p>
+            <p className="mt-0.5 text-[10px] text-silver">From bills</p>
+          </div>
+          <div className="rounded-lg border border-ash bg-canvas px-2.5 py-2">
+            <p className="text-[11px] text-fog">Cash in hand</p>
+            <p className="text-sm font-semibold tabular-nums text-ink">
+              {formatInr(cashInHand)}
+            </p>
+            <p className="mt-0.5 text-[10px] text-silver">From loans</p>
+          </div>
+          <div className="rounded-lg border border-ash bg-canvas px-2.5 py-2">
+            <p className="text-[11px] text-fog">Bank</p>
+            <p className="text-sm font-semibold tabular-nums text-ink">
+              {formatInr(bankBalance)}
+            </p>
+          </div>
+        </div>
         <form onSubmit={submitLog} className="space-y-4">
           <div>
             <Label>Paid via</Label>
-            <div className="mt-1 grid grid-cols-3 gap-2">
+            <div className="mt-1 grid grid-cols-2 gap-2">
               {EXPENSE_PAYMENT_MODES.map((opt) => (
                 <button
                   key={opt.id}
@@ -466,12 +498,19 @@ function MonthlyFixedTab({ userId }) {
               ))}
             </div>
             {logPaymentMode === "BANK" ? (
+              <p className="mt-1.5 text-xs text-fog">Deducts from bank.</p>
+            ) : logPaymentMode === "HAND" ? (
               <p className="mt-1.5 text-xs text-fog">
-                Deducts from bank balance.
+                Deducts from cash in hand (loan money).
+              </p>
+            ) : logPaymentMode === "CASH" ? (
+              <p className="mt-1.5 text-xs text-fog">
+                Sales cash from bills — logged for records (deposit separately
+                on Money).
               </p>
             ) : (
               <p className="mt-1.5 text-xs text-fog">
-                Logged for records only (does not change till or bank).
+                Logged for records only (does not change bank or cash).
               </p>
             )}
           </div>

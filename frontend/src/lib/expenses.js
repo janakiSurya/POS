@@ -3,7 +3,11 @@ import { supabase } from "./supabaseClient";
 import { isOnline } from "./network";
 import { toNum } from "./format";
 import { businessDateIST } from "./businessDay";
-import { getBankBalance, recordBankExpenseOut } from "./bank";
+import {
+  getBankBalance,
+  getCashOnHandBalance,
+  recordBankExpenseOut,
+} from "./bank";
 import { FreshKeys, invalidateFresh } from "./freshSync";
 
 export const EXPENSE_CATEGORIES = [
@@ -16,6 +20,7 @@ export const EXPENSE_CATEGORIES = [
 
 export const EXPENSE_PAYMENT_MODES = [
   { id: "CASH", label: "Cash" },
+  { id: "HAND", label: "Cash in hand" },
   { id: "UPI", label: "UPI" },
   { id: "BANK", label: "Bank" },
 ];
@@ -23,12 +28,14 @@ export const EXPENSE_PAYMENT_MODES = [
 export function normalizeExpensePaymentMode(mode) {
   if (mode === "UPI") return "UPI";
   if (mode === "BANK") return "BANK";
+  if (mode === "HAND") return "HAND";
   return "CASH";
 }
 
 export function paymentModeLabel(mode) {
   if (mode === "UPI") return "UPI";
   if (mode === "BANK") return "Bank";
+  if (mode === "HAND") return "Cash in hand";
   return "Cash";
 }
 
@@ -165,6 +172,11 @@ export async function logFixedCost({
     if (amt > bank + 0.009) {
       throw new Error(`Not enough bank balance (₹${bank}).`);
     }
+  } else if (mode === "HAND") {
+    const cash = await getCashOnHandBalance();
+    if (amt > cash + 0.009) {
+      throw new Error(`Not enough cash in hand (₹${cash}).`);
+    }
   }
 
   const row = {
@@ -205,13 +217,15 @@ export async function logFixedCost({
     await localDb.fixed_cost_logs.put(row);
   }
 
-  if (mode === "BANK") {
+  // BANK → bank wallet; HAND → cash in hand (loan). CASH/UPI are records only here.
+  if (mode === "BANK" || mode === "HAND") {
     await recordBankExpenseOut({
       amount: amt,
       entryDate: paidDate || businessDateIST(),
       note: note?.trim() || `${name} (${month})`,
       userId,
       fixedCostLogId: saved.id,
+      paymentMode: mode === "HAND" ? "CASH" : "BANK",
     });
     await invalidateFresh(FreshKeys.DASHBOARD);
   }
@@ -225,7 +239,10 @@ export async function deleteFixedCostLog(id) {
     // ON DELETE CASCADE removes linked bank_ledger when payment_mode was BANK
     const { error } = await supabase.from("fixed_cost_logs").delete().eq("id", id);
     if (error) throw error;
-  } else if (existing?.payment_mode === "BANK") {
+  } else if (
+    existing?.payment_mode === "BANK" ||
+    existing?.payment_mode === "HAND"
+  ) {
     const linked = await localDb.bank_ledger
       .filter((r) => r.fixed_cost_log_id === id)
       .toArray();

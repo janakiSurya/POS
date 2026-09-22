@@ -7,7 +7,7 @@ import { isOnline } from "./network";
 import { saveDayCloseReport } from "./dayCloseReport";
 import { FreshKeys, invalidateFresh } from "./freshSync";
 import { normalizeExpensePaymentMode } from "./expenses";
-import { getBankBalance, recordBankExpenseOut } from "./bank";
+import { getBankBalance, getCashOnHandBalance, recordBankExpenseOut } from "./bank";
 
 function round(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -241,7 +241,7 @@ export async function computeExpectedTotals(sessionId) {
     const mode = normalizeExpensePaymentMode(e.payment_mode);
     if (mode === "UPI") upiExpenses += toNum(e.amount);
     else if (mode === "CASH") cashExpenses += toNum(e.amount);
-    // BANK ignored for till expected
+    // BANK / HAND ignored for till expected
   }
 
   // No opening float — expected = sales − expenses by mode
@@ -275,6 +275,11 @@ export async function addExpense({
     const bank = await getBankBalance();
     if (amt > bank + 0.009) {
       throw new Error(`Not enough bank balance (₹${bank}).`);
+    }
+  } else if (mode === "HAND") {
+    const cash = await getCashOnHandBalance();
+    if (amt > cash + 0.009) {
+      throw new Error(`Not enough cash in hand (₹${cash}).`);
     }
   }
 
@@ -310,13 +315,14 @@ export async function addExpense({
     await localDb.cash_expenses.put(row);
   }
 
-  if (mode === "BANK") {
+  if (mode === "BANK" || mode === "HAND") {
     const ledger = await recordBankExpenseOut({
       amount: amt,
       entryDate: businessDateIST(),
       note: note?.trim() || `Expense · ${category}`,
       userId,
       cashExpenseId: saved.id,
+      paymentMode: mode === "HAND" ? "CASH" : "BANK",
     });
     if (!(supabase && navigator.onLine)) {
       await queueMutation({

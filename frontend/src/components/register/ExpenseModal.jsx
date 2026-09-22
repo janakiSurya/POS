@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../ui/Button";
 import { Input, Label } from "../ui/Input";
 import { Modal } from "../ui/Modal";
@@ -7,6 +7,12 @@ import {
   EXPENSE_CATEGORIES,
   EXPENSE_PAYMENT_MODES,
 } from "../../lib/expenses";
+import {
+  getBankBalance,
+  getCashOnHandBalance,
+  getUndepositedCashTotal,
+} from "../../lib/bank";
+import { formatInr } from "../../lib/format";
 
 export function ExpenseModal({ open, sessionId, userId, onClose }) {
   const [amount, setAmount] = useState("");
@@ -15,6 +21,29 @@ export function ExpenseModal({ open, sessionId, userId, onClose }) {
   const [paymentMode, setPaymentMode] = useState("CASH");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [bankBalance, setBankBalance] = useState(0);
+  const [cashInHand, setCashInHand] = useState(0);
+  const [salesCash, setSalesCash] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      const [bank, hand, sales] = await Promise.all([
+        getBankBalance(),
+        getCashOnHandBalance(),
+        getUndepositedCashTotal(),
+      ]);
+      if (!cancelled) {
+        setBankBalance(bank);
+        setCashInHand(hand);
+        setSalesCash(sales);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   async function submit(e) {
     e.preventDefault();
@@ -41,13 +70,42 @@ export function ExpenseModal({ open, sessionId, userId, onClose }) {
     }
   }
 
+  const modeHint = {
+    BANK: "Deducts from bank.",
+    HAND: "Deducts from cash in hand (loan money).",
+    CASH: "Deducts from sales cash (from bills).",
+    UPI: "Logged against UPI (does not change bank or cash).",
+  }[paymentMode];
+
   return (
     <Modal open={open} onClose={onClose} title="Record expense">
       {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
+      <div className="mb-4 grid grid-cols-3 gap-2">
+        <div className="rounded-lg border border-ash bg-canvas px-2.5 py-2">
+          <p className="text-[11px] text-fog">Cash</p>
+          <p className="text-sm font-semibold tabular-nums text-ink">
+            {formatInr(salesCash)}
+          </p>
+          <p className="mt-0.5 text-[10px] text-silver">From bills</p>
+        </div>
+        <div className="rounded-lg border border-ash bg-canvas px-2.5 py-2">
+          <p className="text-[11px] text-fog">Cash in hand</p>
+          <p className="text-sm font-semibold tabular-nums text-ink">
+            {formatInr(cashInHand)}
+          </p>
+          <p className="mt-0.5 text-[10px] text-silver">From loans</p>
+        </div>
+        <div className="rounded-lg border border-ash bg-canvas px-2.5 py-2">
+          <p className="text-[11px] text-fog">Bank</p>
+          <p className="text-sm font-semibold tabular-nums text-ink">
+            {formatInr(bankBalance)}
+          </p>
+        </div>
+      </div>
       <form onSubmit={submit} className="space-y-4">
         <div>
           <Label>Paid via</Label>
-          <div className="mt-1 grid grid-cols-3 gap-2">
+          <div className="mt-1 grid grid-cols-2 gap-2">
             {EXPENSE_PAYMENT_MODES.map((opt) => (
               <button
                 key={opt.id}
@@ -63,10 +121,8 @@ export function ExpenseModal({ open, sessionId, userId, onClose }) {
               </button>
             ))}
           </div>
-          {paymentMode === "BANK" ? (
-            <p className="mt-1.5 text-xs text-fog">
-              Deducts from bank balance (not till cash/UPI).
-            </p>
+          {modeHint ? (
+            <p className="mt-1.5 text-xs text-fog">{modeHint}</p>
           ) : null}
         </div>
         <div>
