@@ -379,6 +379,7 @@ export async function createPurchaseInvoice({
   printedCgst,
   printedSgst,
   printedGrandTotal,
+  excludeFromGst = false,
 }) {
   const existing = await findPurchaseInvoiceDuplicate(supplierId, invoiceNumber);
   if (existing) {
@@ -402,6 +403,7 @@ export async function createPurchaseInvoice({
     printed_cgst: pickPrinted(printedCgst),
     printed_sgst: pickPrinted(printedSgst),
     printed_grand_total: pickPrinted(printedGrandTotal),
+    exclude_from_gst: Boolean(excludeFromGst),
     total_amount: 0,
     created_by: createdBy,
     created_at: new Date().toISOString(),
@@ -425,6 +427,7 @@ export async function createPurchaseInvoice({
         printed_cgst: row.printed_cgst,
         printed_sgst: row.printed_sgst,
         printed_grand_total: row.printed_grand_total,
+        exclude_from_gst: row.exclude_from_gst,
         created_by: createdBy,
       })
       .select()
@@ -443,6 +446,146 @@ export async function createPurchaseInvoice({
 
   await localDb.purchase_invoices.put(row);
   return row;
+}
+
+/**
+ * Local / unregistered supplier buy (no GST bill).
+ * Creates/updates product, posts stock, supplier due — marked exclude_from_gst.
+ *
+ * Example: Suresh, 10 MRF tires @ ₹200 cost, sell ₹300 each.
+ */
+export async function createLocalPurchase({
+  supplierId,
+  itemName,
+  partNumber,
+  quantity,
+  costPerUnit,
+  sellingPrice,
+  invoiceDate,
+  invoiceNumber,
+  notes,
+  createdBy,
+  uom = "PCS",
+}) {
+  if (!supplierId) throw new Error("Select a supplier.");
+  const name = String(itemName || "").trim();
+  if (!name) throw new Error("Enter item name.");
+  const qty = Math.round(toNum(quantity));
+  if (qty <= 0) throw new Error("Quantity must be greater than zero.");
+  const cost = round2(costPerUnit);
+  if (cost < 0) throw new Error("Cost cannot be negative.");
+  const sell = round2(sellingPrice);
+  if (sell <= 0) throw new Error("Enter selling price.");
+  const date = invoiceDate || new Date().toISOString().slice(0, 10);
+  const total = round2(cost * qty);
+
+  let code = String(partNumber || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "-");
+  if (!code) {
+    const slug = name
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 24);
+    code = `LOCAL-${slug || "ITEM"}`;
+  }
+
+  const invNo =
+    String(invoiceNumber || "").trim() ||
+    `LOCAL-${date.replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+
+  let product = await catalogGetByPart(code);
+  if (!product) {
+    product = {
+      id: crypto.randomUUID(),
+      part_number: code,
+      name,
+      purchase_price: cost,
+      selling_price: sell,
+      stock_quantity: 0,
+      min_stock_alert: 5,
+      vehicle_compatibility: [],
+      uom: uom || "PCS",
+      exclude_from_gst: true,
+      updated_at: new Date().toISOString(),
+    };
+    if (supabase && navigator.onLine) {
+      const { data, error } = await supabase
+        .from("products")
+        .insert(product)
+        .select()
+        .single();
+      if (error) throw error;
+      product = data;
+    }
+    await catalogPut(product);
+    upsertSearchProduct(product);
+  } else {
+    const updated_at = new Date().toISOString();
+    const patch = {
+      purchase_price: cost,
+      selling_price: sell,
+      name: name || product.name,
+      exclude_from_gst: true,
+      updated_at,
+    };
+    if (supabase && navigator.onLine) {
+      const { data, error } = await supabase
+        .from("products")
+        .update(patch)
+        .eq("id", product.id)
+        .select()
+        .single();
+      if (error) throw error;
+      product = data;
+      await catalogPut(data);
+      upsertSearchProduct(data);
+    } else {
+      await catalogUpdate(product.id, patch);
+      product = await catalogGet(product.id);
+      if (product) upsertSearchProduct(product);
+    }
+  }
+
+  const invoice = await createPurchaseInvoice({
+    supplierId,
+    invoiceNumber: invNo,
+    invoiceDate: date,
+    createdBy,
+    status: "POSTED",
+    source: "LOCAL",
+    invoiceType: "LOCAL",
+    notes: notes?.trim() || `Local buy (no GST) · ${name}`,
+    printedTaxable: total,
+    printedCgst: 0,
+    printedSgst: 0,
+    printedGrandTotal: total,
+    excludeFromGst: true,
+  });
+
+  await postPurchaseLine({
+    productId: product.id,
+    partNumber: product.part_number,
+    description: name,
+    quantity: qty,
+    unitCost: cost,
+    applyCost: true,
+    purchaseInvoiceId: invoice.id,
+    lineNo: 1,
+    uom: uom || "PCS",
+    mrp: sell,
+    taxable: total,
+    cgstPercent: 0,
+    cgstAmount: 0,
+    sgstPercent: 0,
+    sgstAmount: 0,
+    lineTotal: total,
+    gstPercent: 0,
+  });
+
+  return { invoice, product, total };
 }
 
 export async function syncPurchaseInvoicesFromServer(limit = 200) {

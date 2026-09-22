@@ -21,10 +21,16 @@ import { PurchaseSupplierBalances } from "./PurchaseSupplierBalances";
 import { PurchaseTotalsCheck } from "./PurchaseTotalsCheck";
 import { ManualLineCalcHint } from "./ManualLineCalcHint";
 import { SupplierSelect } from "./SupplierSelect";
+import { LocalBuyForm } from "./LocalBuyForm";
 import { compareInvoiceCalculation } from "../../lib/purchaseCalculations";
 import { PageHeader } from "../shared/PageHeader";
 
 const UOM_OPTIONS = ["PCS", "SET", "KG", "LTR", "BOX", "PAIR"];
+
+const ENTRY_TABS = [
+  { id: "gst", label: "GST invoice" },
+  { id: "local", label: "Local buy (no GST)" },
+];
 
 const HISTORY_TABS = [
   { id: "invoices", label: "Invoices" },
@@ -32,6 +38,7 @@ const HISTORY_TABS = [
 ];
 
 export function PurchaseEntry({ profile, isOwner }) {
+  const [entryTab, setEntryTab] = useState("gst");
   const [supplierId, setSupplierId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(businessDateIST());
@@ -228,8 +235,32 @@ export function PurchaseEntry({ profile, isOwner }) {
   return (
     <div className="space-y-4 sm:space-y-8">
       <PageHeader title="Purchases" />
+
+      <div className="flex flex-wrap gap-1.5">
+        {ENTRY_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setEntryTab(t.id)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+              entryTab === t.id
+                ? "bg-action text-canvas"
+                : "border border-ash bg-canvas text-fog hover:bg-paper hover:text-ink"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {entryTab === "local" ? (
+        <LocalBuyForm
+          profile={profile}
+          onSaved={() => setHistoryKey((k) => k + 1)}
+        />
+      ) : (
       <Card>
-        <h2 className="mb-3 font-medium text-ink">New purchase entry</h2>
+        <h2 className="mb-3 font-medium text-ink">New GST purchase</h2>
         <p className="mb-3 text-xs text-fog">
           Unit cost is excl. GST. Default qty is 1 and GST is 18% (9% CGST + 9%
           SGST). Pick unit as Piece (PCS) or Set, etc. Enter printed invoice totals
@@ -427,6 +458,7 @@ export function PurchaseEntry({ profile, isOwner }) {
           <Button type="button" className="w-full sm:w-auto" onClick={() => post()}>Post inward</Button>
         </div>
       </Card>
+      )}
 
       <Modal open={Boolean(costPrompt)} onClose={() => setCostPrompt(null)} title="Cost price changed">
         {costPrompt ? (

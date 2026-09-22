@@ -15,6 +15,8 @@ export async function seedDemoData() {
     address: "",
     invoice_prefix: "SSA",
     next_invoice_number: 1,
+    local_invoice_prefix: "LOC",
+    next_local_invoice_number: 1,
     thank_you_line: "Thank you — visit again",
   };
   await localDb.shop_settings.put(shop);

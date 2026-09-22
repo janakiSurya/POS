@@ -191,6 +191,12 @@ export function SalesHistory() {
                 <div className="min-w-0">
                   <p className="font-mono text-sm font-semibold text-ink">
                     {inv.invoice_number || "—"}
+                    {inv.is_local_sale ||
+                    String(inv.invoice_number || "").startsWith("LOC-") ? (
+                      <span className="ml-2 rounded bg-ash px-1.5 py-0.5 font-sans text-[10px] font-medium uppercase tracking-wide text-fog">
+                        Local
+                      </span>
+                    ) : null}
                   </p>
                   <p className="mt-0.5 text-xs text-fog">
                     {formatBillTime(inv.created_at)}

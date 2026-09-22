@@ -6,6 +6,38 @@ import { lineTotal, toNum } from "./format";
 import { isOnline } from "./network";
 import { invalidateOwnerAggregates } from "./freshSync";
 
+/** True when every line is a local / exclude_from_gst product. */
+export async function saleIsFullyLocal(lines) {
+  if (!lines?.length) return false;
+  const ids = [...new Set(lines.map((l) => l.product_id).filter(Boolean))];
+  if (!ids.length) return false;
+  const products = await catalogGetMany(ids);
+  const byId = new Map(products.map((p) => [p.id, p]));
+  // Dexie merge for exclude flag
+  const localRows = await localDb.products.toArray();
+  for (const p of localRows) {
+    if (!ids.includes(p.id)) continue;
+    const cur = byId.get(p.id);
+    if (!cur) byId.set(p.id, p);
+    else if (p.exclude_from_gst) byId.set(p.id, { ...cur, exclude_from_gst: true });
+  }
+  for (const id of ids) {
+    const p = byId.get(id);
+    if (!p?.exclude_from_gst) return false;
+  }
+  return true;
+}
+
+async function allocateOfflineInvoiceNumber(localSale) {
+  const key = localSale ? "demo_local_invoice_num" : "demo_invoice_num";
+  const prefix = localSale ? "LOC" : "SSA";
+  const meta = await localDb.sync_meta.get(key);
+  const n = meta?.value ?? 1;
+  const invoiceNumber = `${prefix}-${String(n).padStart(4, "0")}`;
+  await localDb.sync_meta.put({ key, value: n + 1 });
+  return invoiceNumber;
+}
+
 export async function findCustomerByPhone(phone) {
   const normalized = phone.replace(/\D/g, "");
   const local = await localDb.customers.where("phone").equals(normalized).first();
@@ -67,6 +99,8 @@ export async function completeSale({
   const billDisc =
     discountMode === "bill" ? toNum(billDiscountPercent) : 0;
 
+  const localSale = await saleIsFullyLocal(lines);
+
   // Optimistic local stock
   for (const line of lines) {
     const product = await catalogGet(line.product_id);
@@ -80,9 +114,14 @@ export async function completeSale({
     });
   }
 
+  let number = invoiceNumber || null;
+  if (!number && !(supabase && isOnline())) {
+    number = await allocateOfflineInvoiceNumber(localSale);
+  }
+
   const invoice = {
     id: crypto.randomUUID(),
-    invoice_number: invoiceNumber,
+    invoice_number: number,
     session_id: sessionId,
     customer_id: customerId || null,
     subtotal_amount: subtotal,
@@ -92,6 +131,7 @@ export async function completeSale({
     staff_id: staffId,
     created_at: new Date().toISOString(),
     synced: false,
+    is_local_sale: localSale,
   };
 
   const items = lines.map((l) => ({
@@ -131,15 +171,16 @@ export async function completeSale({
         paymentMethod,
         total,
         staffId,
+        localSale,
       });
       return { invoice: serverInvoice, items };
     } catch (err) {
-      await queueMutation({ type: "sale", payload });
+      await queueMutation({ type: "sale", payload: { ...payload, localSale } });
       return { invoice, items, queued: true };
     }
   }
 
-  await queueMutation({ type: "sale", payload });
+  await queueMutation({ type: "sale", payload: { ...payload, localSale } });
   return { invoice, items, queued: true };
 }
 
@@ -151,12 +192,18 @@ export async function pushSaleToServer({
   paymentMethod,
   total,
   staffId,
+  localSale = false,
 }) {
   const localInvoiceId = invoice.id;
 
   let invoiceNumber = invoice.invoice_number;
   if (!invoiceNumber) {
-    const { data: num, error: numErr } = await supabase.rpc("next_invoice_number");
+    const isLocal =
+      localSale ||
+      invoice.is_local_sale ||
+      (await saleIsFullyLocal(items));
+    const rpc = isLocal ? "next_local_invoice_number" : "next_invoice_number";
+    const { data: num, error: numErr } = await supabase.rpc(rpc);
     if (numErr) throw numErr;
     invoiceNumber = num;
   }

@@ -155,8 +155,19 @@ export function PurchaseInvoiceHistory({ refreshKey = 0 }) {
                     >
                       {inv.status.replace("_", " ")}
                     </span>
+                    {inv.exclude_from_gst ||
+                    inv.source === "LOCAL" ||
+                    inv.invoice_type === "LOCAL" ? (
+                      <span className="rounded bg-paper px-1.5 py-0.5 text-[10px] font-medium uppercase text-fog">
+                        No GST · books only
+                      </span>
+                    ) : null}
                     <span className="text-[10px] uppercase text-silver">
-                      {inv.source === "EXCEL" ? "Excel" : "Manual"}
+                      {inv.source === "EXCEL"
+                        ? "Excel"
+                        : inv.source === "LOCAL"
+                          ? "Local"
+                          : "Manual"}
                     </span>
                   </div>
                   <p className="mt-0.5 text-xs text-fog">

@@ -40,10 +40,16 @@ import {
   PeriodCompareChart,
   ProfitBreakdownChart,
 } from "./ReportCharts";
+import { GstReportPanel } from "./GstReportPanel";
 import { KpiCard, Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input, Label } from "../ui/Input";
 import { PageHeader } from "../shared/PageHeader";
+
+const REPORT_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "gst", label: "GST 90-day" },
+];
 
 function StatHighlight({ label, value, sub, accent = "success" }) {
   const border =
@@ -67,6 +73,7 @@ export function SalesReports() {
   const today = businessDateIST();
   const monthRange = thisMonthRangeIST();
 
+  const [tab, setTab] = useState("overview");
   const [invoices, setInvoices] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [fixedLogs, setFixedLogs] = useState([]);
@@ -245,18 +252,41 @@ export function SalesReports() {
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Sales reports"
-        description="Visual overview · sales, expenses, comparisons (IST)"
+        description="Visual overview · GST bills · expenses (IST)"
       >
-        <Button
-          variant="secondary"
-          className="w-full text-xs sm:w-auto"
-          onClick={() => load(true)}
-        >
-          <RefreshCw className="mr-1.5 inline h-3.5 w-3.5" />
-          Refresh
-        </Button>
+        {tab === "overview" ? (
+          <Button
+            variant="secondary"
+            className="w-full text-xs sm:w-auto"
+            onClick={() => load(true)}
+          >
+            <RefreshCw className="mr-1.5 inline h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        ) : null}
       </PageHeader>
 
+      <div className="flex flex-wrap gap-1.5">
+        {REPORT_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+              tab === t.id
+                ? "bg-action text-canvas"
+                : "border border-ash bg-canvas text-fog hover:bg-paper hover:text-ink"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "gst" ? <GstReportPanel /> : null}
+
+      {tab === "overview" ? (
+      <>
       {error ? (
         <p className="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
           {error}
@@ -545,6 +575,8 @@ export function SalesReports() {
         {invoices.length} bills and {expenses.length} expenses synced. Today{" "}
         {formatDateIST(new Date())} (IST).
       </p>
+      </>
+      ) : null}
     </div>
   );
 }

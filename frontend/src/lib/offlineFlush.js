@@ -12,7 +12,14 @@ export async function flushOfflineQueue() {
   for (const row of pending) {
     try {
       if (row.type === "sale") {
-        const { invoice, items, customerId, paymentMethod, total } = row.payload;
+        const {
+          invoice,
+          items,
+          customerId,
+          paymentMethod,
+          total,
+          localSale,
+        } = row.payload;
         await pushSaleToServer({
           invoice,
           items,
@@ -20,6 +27,7 @@ export async function flushOfflineQueue() {
           paymentMethod,
           total,
           staffId: invoice.staff_id,
+          localSale: Boolean(localSale || invoice?.is_local_sale),
         });
       }
       if (row.type === "expense") {

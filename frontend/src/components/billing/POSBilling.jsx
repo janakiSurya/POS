@@ -173,14 +173,6 @@ export function POSBilling({ session, profile, isOwner }) {
 
       setPending(true);
       try {
-        let invoiceNumber = null;
-        if (!navigator.onLine || !import.meta.env.VITE_SUPABASE_URL) {
-          const meta = await localDb.sync_meta.get("demo_invoice_num");
-          const n = meta?.value ?? 1;
-          invoiceNumber = `SSA-${String(n).padStart(4, "0")}`;
-          await localDb.sync_meta.put({ key: "demo_invoice_num", value: n + 1 });
-        }
-
         const saleLines =
           discountMode === "bill"
             ? cart.map((l) => ({
@@ -190,13 +182,15 @@ export function POSBilling({ session, profile, isOwner }) {
               }))
             : cart;
 
+        // Online: server allocates SSA-#### or LOC-#### (local-only cart).
+        // Offline: completeSale allocates the matching local counter.
         const { invoice } = await completeSale({
           sessionId: session.id,
           staffId: profile.id,
           customerId: cust?.id,
           paymentMethod: payment,
           lines: saleLines,
-          invoiceNumber,
+          invoiceNumber: null,
           discountMode,
           billDiscountPercent: totals.billDiscount,
           subtotalAmount: totals.subtotal,

@@ -83,12 +83,20 @@ function ensureSchema() {
       stock_quantity REAL,
       min_stock_alert REAL,
       rack_location TEXT,
-      updated_at TEXT
+      updated_at TEXT,
+      exclude_from_gst INTEGER DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     CREATE INDEX IF NOT EXISTS idx_products_part ON products(part_number);
     CREATE INDEX IF NOT EXISTS idx_products_updated ON products(updated_at);
   `);
+  try {
+    db.run(
+      "ALTER TABLE products ADD COLUMN exclude_from_gst INTEGER DEFAULT 0",
+    );
+  } catch {
+    /* column already exists */
+  }
 }
 
 function toRow(p) {
@@ -106,6 +114,7 @@ function toRow(p) {
     min_stock_alert: Number(p.min_stock_alert) || 0,
     rack_location: p.rack_location ?? null,
     updated_at: p.updated_at || new Date().toISOString(),
+    exclude_from_gst: p.exclude_from_gst ? 1 : 0,
   };
 }
 
@@ -131,6 +140,7 @@ function fromSql(row) {
     min_stock_alert: row.min_stock_alert,
     rack_location: row.rack_location,
     updated_at: row.updated_at,
+    exclude_from_gst: Boolean(row.exclude_from_gst),
   };
 }
 
@@ -266,8 +276,9 @@ function upsertSql(p) {
   db.run(
     `INSERT OR REPLACE INTO products (
       id, part_number, name, category, brand, uom, vehicle_compatibility,
-      purchase_price, selling_price, stock_quantity, min_stock_alert, rack_location, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      purchase_price, selling_price, stock_quantity, min_stock_alert, rack_location, updated_at,
+      exclude_from_gst
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       r.id,
       r.part_number,
@@ -282,6 +293,7 @@ function upsertSql(p) {
       r.min_stock_alert,
       r.rack_location,
       r.updated_at,
+      r.exclude_from_gst,
     ],
   );
 }
