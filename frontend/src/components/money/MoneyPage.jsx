@@ -17,7 +17,7 @@ import {
   getMoneyOverview,
   getUndepositedCashDays,
   getUnconfirmedUpiDays,
-  listBankLedger,
+  listRecentMoneyMovements,
   listLendersWithBalances,
   listLoanEntries,
   listUnpaidPurchaseInvoices,
@@ -60,7 +60,7 @@ export function MoneyPage({ userId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [overview, setOverview] = useState(null);
-  const [ledger, setLedger] = useState([]);
+  const [movements, setMovements] = useState([]);
   const [lenders, setLenders] = useState([]);
   const [cashDays, setCashDays] = useState([]);
   const [upiDays, setUpiDays] = useState([]);
@@ -82,10 +82,10 @@ export function MoneyPage({ userId }) {
           syncMoneyFromServer(),
         ]);
       }
-      const [ov, led, lens, cash, upi, unpaidInv, pays, invs, sups] =
+      const [ov, moves, lens, cash, upi, unpaidInv, pays, invs, sups] =
         await Promise.all([
           getMoneyOverview(),
-          listBankLedger(40),
+          listRecentMoneyMovements({ limit: 200 }),
           listLendersWithBalances(),
           getUndepositedCashDays(),
           getUnconfirmedUpiDays(),
@@ -95,7 +95,7 @@ export function MoneyPage({ userId }) {
           localDb.suppliers.toArray(),
         ]);
       setOverview(ov);
-      setLedger(led);
+      setMovements(moves);
       setLenders(lens);
       setCashDays(cash);
       setUpiDays(upi);
@@ -153,7 +153,7 @@ export function MoneyPage({ userId }) {
       ) : null}
 
       {tab === "overview" && overview ? (
-        <OverviewTab overview={overview} ledger={ledger} />
+        <OverviewTab overview={overview} movements={movements} />
       ) : null}
       {tab === "lenders" ? (
         <LendersTab
@@ -189,7 +189,17 @@ export function MoneyPage({ userId }) {
   );
 }
 
-function OverviewTab({ overview, ledger }) {
+function OverviewTab({ overview, movements }) {
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  const filtered = movements.filter((r) => {
+    const d = String(r.entry_date).slice(0, 10);
+    if (fromDate && d < fromDate) return false;
+    if (toDate && d > toDate) return false;
+    return true;
+  });
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -224,33 +234,82 @@ function OverviewTab({ overview, ledger }) {
       </div>
 
       <Card>
-        <h2 className="mb-3 font-semibold text-ink">Recent bank movements</h2>
-        {ledger.length === 0 ? (
-          <p className="text-sm text-silver">No bank entries yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {ledger.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center justify-between gap-3 border-b border-ash py-2 text-sm last:border-0"
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="font-semibold text-ink">Recent movements</h2>
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <Label>From</Label>
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>To</Label>
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+              />
+            </div>
+            {fromDate || toDate ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="text-xs"
+                onClick={() => {
+                  setFromDate("");
+                  setToDate("");
+                }}
               >
-                <div className="min-w-0">
-                  <p className="font-medium text-ink">{ledgerLabel(r.entry_type)}</p>
-                  <p className="text-xs text-fog">
-                    {formatDateIST(r.entry_date + "T12:00:00")}
-                    {r.note ? ` · ${r.note}` : ""}
+                Clear dates
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        {filtered.length === 0 ? (
+          <p className="text-sm text-silver">No movements in this range.</p>
+        ) : (
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+            {filtered.map((r) => {
+              const via = r.payment_mode === "CASH" ? "Cash" : "Bank";
+              const partyBit =
+                r.entry_type === "LOAN_IN" && r.partyName
+                  ? ` from ${r.partyName}`
+                  : r.entry_type === "LOAN_OUT" && r.partyName
+                    ? ` to ${r.partyName}`
+                    : r.entry_type === "SUPPLIER_PAYMENT" && r.partyName
+                      ? ` · ${r.partyName}`
+                      : r.partyName
+                        ? ` · ${r.partyName}`
+                        : "";
+              return (
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between gap-3 border-b border-ash py-2 text-sm last:border-0"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">
+                      {ledgerLabel(r.entry_type)}
+                      {partyBit} · {via}
+                    </p>
+                    <p className="text-xs text-fog">
+                      {formatDateIST(r.entry_date + "T12:00:00")}
+                      {r.note ? ` · ${r.note}` : ""}
+                    </p>
+                  </div>
+                  <p
+                    className={`shrink-0 tabular-nums font-semibold ${
+                      r.direction === "IN" ? "text-success" : "text-ink"
+                    }`}
+                  >
+                    {r.direction === "IN" ? "+" : "−"}
+                    {formatInr(r.amount)}
                   </p>
                 </div>
-                <p
-                  className={`shrink-0 tabular-nums font-semibold ${
-                    r.direction === "IN" ? "text-success" : "text-ink"
-                  }`}
-                >
-                  {r.direction === "IN" ? "+" : "−"}
-                  {formatInr(r.amount)}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

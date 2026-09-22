@@ -798,10 +798,78 @@ export async function listBankLedger(limit = 50) {
     .orderBy("entry_date")
     .reverse()
     .toArray();
-  // Overview "bank movements" — exclude cash-mode rows (shown under supplier history).
   return rows
     .filter((r) => r.payment_mode !== "CASH")
     .slice(0, limit);
+}
+
+/** Recent money movements (bank + cash wallet) with party names. */
+export async function listRecentMoneyMovements({
+  startDate,
+  endDate,
+  limit = 100,
+} = {}) {
+  const [ledger, loans, lenders, suppliers] = await Promise.all([
+    localDb.bank_ledger.toArray(),
+    localDb.loan_entries.toArray(),
+    localDb.lenders.toArray(),
+    localDb.suppliers.toArray(),
+  ]);
+  const lenderMap = new Map(lenders.map((l) => [l.id, l]));
+  const supplierMap = new Map(suppliers.map((s) => [s.id, s]));
+
+  const rows = [];
+
+  for (const r of ledger) {
+    const date = String(r.entry_date).slice(0, 10);
+    if (startDate && date < startDate) continue;
+    if (endDate && date > endDate) continue;
+    const lender = r.lender_id ? lenderMap.get(r.lender_id) : null;
+    const supplier = r.supplier_id ? supplierMap.get(r.supplier_id) : null;
+    let party = null;
+    if (lender) party = lender.name;
+    else if (supplier) party = supplier.name;
+    rows.push({
+      id: r.id,
+      entry_date: date,
+      entry_type: r.entry_type,
+      amount: toNum(r.amount),
+      direction: r.direction,
+      payment_mode: r.payment_mode === "CASH" ? "CASH" : "BANK",
+      note: r.note || null,
+      partyName: party,
+      created_at: r.created_at || "",
+    });
+  }
+
+  // Cash loans live only on loan_entries (not bank_ledger)
+  for (const e of loans) {
+    if (e.payment_mode !== "CASH") continue;
+    const date = String(e.entry_date).slice(0, 10);
+    if (startDate && date < startDate) continue;
+    if (endDate && date > endDate) continue;
+    const lender = lenderMap.get(e.lender_id);
+    const received = e.entry_type === "RECEIVED";
+    rows.push({
+      id: `loan-${e.id}`,
+      entry_date: date,
+      entry_type: received ? "LOAN_IN" : "LOAN_OUT",
+      amount: toNum(e.amount),
+      direction: received ? "IN" : "OUT",
+      payment_mode: "CASH",
+      note: e.note || null,
+      partyName: lender?.name || null,
+      created_at: e.created_at || "",
+    });
+  }
+
+  rows.sort((a, b) => {
+    const d = String(b.entry_date).localeCompare(String(a.entry_date));
+    if (d !== 0) return d;
+    return String(b.created_at).localeCompare(String(a.created_at));
+  });
+
+  return rows.slice(0, limit);
 }
 
 export async function listSupplierPayments(limit = 40) {
