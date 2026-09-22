@@ -20,10 +20,9 @@ import {
   listRecentMoneyMovements,
   listLendersWithBalances,
   listLoanEntries,
-  listUnpaidPurchaseInvoices,
   listSupplierPayments,
-  payPurchaseInvoice,
-  purchasePayableTotal,
+  listSuppliersWithBalance,
+  paySupplier,
   recordLoanEntry,
   updateLoanEntry,
   getLenderRepayBreakdown,
@@ -65,9 +64,8 @@ export function MoneyPage({ userId }) {
   const [lenders, setLenders] = useState([]);
   const [cashDays, setCashDays] = useState([]);
   const [upiDays, setUpiDays] = useState([]);
-  const [unpaid, setUnpaid] = useState([]);
+  const [supplierBalances, setSupplierBalances] = useState([]);
   const [supplierPayments, setSupplierPayments] = useState([]);
-  const [invoicesById, setInvoicesById] = useState(new Map());
   const [suppliers, setSuppliers] = useState(new Map());
 
   const refresh = useCallback(async () => {
@@ -83,16 +81,15 @@ export function MoneyPage({ userId }) {
           syncMoneyFromServer(),
         ]);
       }
-      const [ov, moves, lens, cash, upi, unpaidInv, pays, invs, sups] =
+      const [ov, moves, lens, cash, upi, balances, pays, sups] =
         await Promise.all([
           getMoneyOverview(),
           listRecentMoneyMovements({ limit: 200 }),
           listLendersWithBalances(),
           getUndepositedCashDays(),
           getUnconfirmedUpiDays(),
-          listUnpaidPurchaseInvoices(),
+          listSuppliersWithBalance(),
           listSupplierPayments(50),
-          localDb.purchase_invoices.toArray(),
           localDb.suppliers.toArray(),
         ]);
       setOverview(ov);
@@ -100,9 +97,8 @@ export function MoneyPage({ userId }) {
       setLenders(lens);
       setCashDays(cash);
       setUpiDays(upi);
-      setUnpaid(unpaidInv);
+      setSupplierBalances(balances);
       setSupplierPayments(pays);
-      setInvoicesById(new Map(invs.map((i) => [i.id, i])));
       setSuppliers(new Map(sups.map((s) => [s.id, s])));
     } catch (err) {
       setError(err.message || "Could not load money data.");
@@ -177,9 +173,8 @@ export function MoneyPage({ userId }) {
       {tab === "pay" ? (
         <PaySupplierTab
           userId={userId}
-          unpaid={unpaid}
+          supplierBalances={supplierBalances}
           suppliers={suppliers}
-          invoicesById={invoicesById}
           payments={supplierPayments}
           bankBalance={overview?.bankBalance || 0}
           cashOnHand={overview?.cashOnHand || 0}
@@ -1033,15 +1028,14 @@ function UpiDepositTab({ userId, days, onChanged }) {
 
 function PaySupplierTab({
   userId,
-  unpaid,
+  supplierBalances,
   suppliers,
-  invoicesById,
   payments,
   bankBalance,
   cashOnHand,
   onChanged,
 }) {
-  const [invoiceId, setInvoiceId] = useState("");
+  const [supplierId, setSupplierId] = useState("");
   const [amount, setAmount] = useState("");
   const [entryDate, setEntryDate] = useState(businessDateIST());
   const [note, setNote] = useState("");
@@ -1049,30 +1043,29 @@ function PaySupplierTab({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
-  const inv = unpaid.find((i) => i.id === invoiceId);
-  const payable = inv ? purchasePayableTotal(inv) : 0;
-  const remaining = inv ? roundRemaining(payable, inv.amount_paid) : 0;
+  const selected = supplierBalances.find((s) => s.id === supplierId);
+  const remaining = selected ? toNum(selected.remaining) : 0;
 
   useEffect(() => {
-    if (!inv) return;
+    if (!selected) return;
     setAmount(String(remaining));
-    setEntryDate(toDateInputValue(inv.invoice_date) || businessDateIST());
-  }, [invoiceId]); // eslint-disable-line react-hooks/exhaustive-deps
+    setEntryDate(businessDateIST());
+  }, [supplierId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(e) {
     e.preventDefault();
     setPending(true);
     setError("");
     try {
-      await payPurchaseInvoice({
-        purchaseInvoiceId: invoiceId,
+      await paySupplier({
+        supplierId,
         amount,
         entryDate,
         note,
         userId,
         paymentMode,
       });
-      setInvoiceId("");
+      setSupplierId("");
       setAmount("");
       setEntryDate(businessDateIST());
       setNote("");
@@ -1103,51 +1096,43 @@ function PaySupplierTab({
         </Card>
       </div>
       <p className="text-xs text-fog">
-        Cash (from bills) is separate — deposit only on Cash deposit. Or open{" "}
+        Pay against the supplier’s total due (not one invoice). Applied to oldest
+        unpaid invoices automatically. Full history also on{" "}
         <Link className="text-action underline" to="/purchases">
-          Purchases
-        </Link>{" "}
-        for invoice status.
+          Purchases → Supplier balances
+        </Link>
+        .
       </p>
 
-      {unpaid.length === 0 ? (
+      {supplierBalances.length === 0 ? (
         <Card className="py-8 text-center text-sm text-silver">
-          No unpaid purchase invoices.
+          No suppliers with remaining balance.
         </Card>
       ) : (
         <Card>
           {error ? <p className="mb-2 text-sm text-danger">{error}</p> : null}
           <form onSubmit={submit} className="space-y-3">
             <div>
-              <Label>Purchase invoice</Label>
+              <Label>Supplier</Label>
               <select
                 className="mt-1 w-full rounded-lg border border-ash bg-paper px-3 py-2.5 text-sm text-ink"
-                value={invoiceId}
-                onChange={(e) => setInvoiceId(e.target.value)}
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value)}
                 required
               >
-                <option value="">Select invoice…</option>
-                {unpaid.map((i) => {
-                  const sup = suppliers.get(i.supplier_id);
-                  const rem = roundRemaining(
-                    purchasePayableTotal(i),
-                    i.amount_paid,
-                  );
-                  return (
-                    <option key={i.id} value={i.id}>
-                      {i.invoice_number} · {sup?.name || "Supplier"} · due{" "}
-                      {formatInr(rem)}
-                    </option>
-                  );
-                })}
+                <option value="">Select supplier…</option>
+                {supplierBalances.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} · due {formatInr(s.remaining)} (
+                    {s.unpaidCount} invoice{s.unpaidCount === 1 ? "" : "s"})
+                  </option>
+                ))}
               </select>
             </div>
-            {inv ? (
+            {selected ? (
               <p className="text-xs text-fog">
-                Invoice {formatInr(payable)}
-                {toNum(inv.printed_grand_total) > 0 ? " (printed)" : ""} · Paid{" "}
-                {formatInr(inv.amount_paid)} · Remaining {formatInr(remaining)}.
-                Amount and date default from the invoice — edit to override.
+                Total due {formatInr(remaining)}. Enter any amount up to this —
+                it reduces the supplier balance.
               </p>
             ) : null}
             <div>
@@ -1171,11 +1156,11 @@ function PaySupplierTab({
                   </button>
                 ))}
               </div>
-            <p className="mt-1.5 text-xs text-fog">
-              {paymentMode === "CASH"
-                ? "Uses cash in hand (from loans) — not sales cash from bills."
-                : "Deducts from bank balance."}
-            </p>
+              <p className="mt-1.5 text-xs text-fog">
+                {paymentMode === "CASH"
+                  ? "Uses cash in hand (from loans) — not sales cash from bills."
+                  : "Deducts from bank balance."}
+              </p>
             </div>
             <div>
               <Label>Pay amount (₹)</Label>
@@ -1201,7 +1186,11 @@ function PaySupplierTab({
               <Label>Note</Label>
               <Input value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
-            <Button type="submit" disabled={pending || !invoiceId} className="w-full">
+            <Button
+              type="submit"
+              disabled={pending || !supplierId}
+              className="w-full"
+            >
               {pending
                 ? "Paying…"
                 : paymentMode === "CASH"
@@ -1213,23 +1202,14 @@ function PaySupplierTab({
       )}
 
       <Card>
-        <h2 className="mb-3 font-semibold text-ink">Payment history</h2>
+        <h2 className="mb-3 font-semibold text-ink">Recent payments</h2>
         {payments.length === 0 ? (
           <p className="text-sm text-silver">No supplier payments yet.</p>
         ) : (
           <div className="max-h-[50vh] space-y-2 overflow-y-auto">
             {payments.map((p) => {
-              const invRow = invoicesById.get(p.purchase_invoice_id);
               const sup = suppliers.get(p.supplier_id);
               const mode = p.payment_mode === "CASH" ? "Cash in hand" : "Bank";
-              const payable = invRow ? purchasePayableTotal(invRow) : 0;
-              const paid = toNum(invRow?.amount_paid);
-              const rem = invRow
-                ? Math.max(
-                    0,
-                    Math.round((payable - paid + Number.EPSILON) * 100) / 100,
-                  )
-                : null;
               return (
                 <div
                   key={p.id}
@@ -1237,19 +1217,10 @@ function PaySupplierTab({
                 >
                   <div className="min-w-0">
                     <p className="font-medium text-ink">
-                      {invRow?.invoice_number || "Invoice"} · {mode}
+                      {sup?.name || "Supplier"} · {mode}
                     </p>
                     <p className="text-xs text-fog">
                       {formatDateIST(p.entry_date + "T12:00:00")}
-                      {sup ? ` · ${sup.name}` : ""}
-                      {invRow
-                        ? ` · paid ${formatInr(paid)} of ${formatInr(payable)}`
-                        : ""}
-                      {rem != null && rem > 0.009
-                        ? ` · remaining ${formatInr(rem)}`
-                        : rem != null
-                          ? " · fully paid"
-                          : ""}
                       {p.note ? ` · ${p.note}` : ""}
                     </p>
                   </div>
@@ -1264,16 +1235,4 @@ function PaySupplierTab({
       </Card>
     </div>
   );
-}
-
-function roundRemaining(total, paid) {
-  return Math.round((toNum(total) - toNum(paid) + Number.EPSILON) * 100) / 100;
-}
-
-function toDateInputValue(dateStr) {
-  if (!dateStr) return "";
-  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return dateStr.slice(0, 10);
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }

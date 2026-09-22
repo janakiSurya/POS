@@ -998,16 +998,62 @@ export async function payPurchaseInvoice({
 }) {
   const inv = await localDb.purchase_invoices.get(purchaseInvoiceId);
   if (!inv) throw new Error("Purchase invoice not found.");
+  return paySupplier({
+    supplierId: inv.supplier_id,
+    amount,
+    entryDate,
+    note,
+    userId,
+    paymentMode,
+    preferInvoiceId: purchaseInvoiceId,
+  });
+}
 
+/**
+ * Pay a supplier against their total due (not picking one invoice).
+ * Applies FIFO to oldest unpaid invoices; one ledger history row per payment.
+ */
+export async function paySupplier({
+  supplierId,
+  amount,
+  entryDate,
+  note,
+  userId,
+  paymentMode = "BANK",
+  preferInvoiceId = null,
+}) {
+  if (!supplierId) throw new Error("Select a supplier.");
   const amt = round2(amount);
   if (amt <= 0) throw new Error("Amount must be greater than zero.");
   const mode = paymentMode === "CASH" ? "CASH" : "BANK";
 
-  const already = toNum(inv.amount_paid);
-  const total = purchasePayableTotal(inv);
-  const remaining = round2(Math.max(0, total - already));
-  if (amt > remaining + 0.009) {
-    throw new Error(`Payment exceeds remaining (₹${remaining}).`);
+  const all = await localDb.purchase_invoices.toArray();
+  let invoices = all
+    .filter((i) => i.supplier_id === supplierId && i.status === "POSTED")
+    .map((i) => ({
+      ...i,
+      remaining: round2(
+        Math.max(0, purchasePayableTotal(i) - toNum(i.amount_paid)),
+      ),
+    }))
+    .filter((i) => i.remaining > 0.009)
+    .sort((a, b) => {
+      const d = String(a.invoice_date).localeCompare(String(b.invoice_date));
+      if (d !== 0) return d;
+      return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+    });
+
+  // Optional: when paying from an old per-invoice flow, consume that invoice first.
+  if (preferInvoiceId) {
+    const preferred = invoices.find((i) => i.id === preferInvoiceId);
+    if (!preferred) throw new Error("Invoice is already paid or not found.");
+    invoices = [preferred, ...invoices.filter((i) => i.id !== preferInvoiceId)];
+  }
+
+  const totalDue = round2(invoices.reduce((s, i) => s + i.remaining, 0));
+  if (totalDue <= 0.009) throw new Error("No balance due for this supplier.");
+  if (amt > totalDue + 0.009) {
+    throw new Error(`Payment exceeds supplier balance (₹${totalDue}).`);
   }
 
   if (mode === "BANK") {
@@ -1018,14 +1064,27 @@ export async function payPurchaseInvoice({
   } else {
     const cash = await getCashOnHandBalance();
     if (amt > cash + 0.009) {
-      throw new Error(`Not enough cash on hand (₹${cash}).`);
+      throw new Error(`Not enough cash in hand (₹${cash}).`);
     }
   }
 
-  const newPaid = round2(already + amt);
-  const status = paymentStatus(total, newPaid);
-  const date = entryDate || businessDateIST();
+  let left = amt;
+  const updates = [];
+  for (const inv of invoices) {
+    if (left <= 0.009) break;
+    const take = round2(Math.min(inv.remaining, left));
+    const newPaid = round2(toNum(inv.amount_paid) + take);
+    updates.push({
+      id: inv.id,
+      amount_paid: newPaid,
+      payment_status: paymentStatus(purchasePayableTotal(inv), newPaid),
+      updated_at: new Date().toISOString(),
+    });
+    left = round2(left - take);
+  }
 
+  const supplier = await localDb.suppliers.get(supplierId);
+  const date = entryDate || businessDateIST();
   const ledger = {
     id: crypto.randomUUID(),
     entry_date: date,
@@ -1033,9 +1092,9 @@ export async function payPurchaseInvoice({
     amount: amt,
     direction: "OUT",
     payment_mode: mode,
-    note: note?.trim() || `Payment for invoice ${inv.invoice_number}`,
-    supplier_id: inv.supplier_id,
-    purchase_invoice_id: inv.id,
+    note: note?.trim() || `Payment to ${supplier?.name || "supplier"}`,
+    supplier_id: supplierId,
+    purchase_invoice_id: null,
     created_by: userId,
     created_at: new Date().toISOString(),
   };
@@ -1047,32 +1106,47 @@ export async function payPurchaseInvoice({
       .select()
       .single();
     if (lErr) throw lErr;
-    const { data: updated, error: uErr } = await supabase
-      .from("purchase_invoices")
-      .update({
-        amount_paid: newPaid,
-        payment_status: status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", inv.id)
-      .select()
-      .single();
-    if (uErr) throw uErr;
+
+    const updatedInvoices = [];
+    for (const u of updates) {
+      const { data, error } = await supabase
+        .from("purchase_invoices")
+        .update({
+          amount_paid: u.amount_paid,
+          payment_status: u.payment_status,
+          updated_at: u.updated_at,
+        })
+        .eq("id", u.id)
+        .select()
+        .single();
+      if (error) throw error;
+      await localDb.purchase_invoices.put(data);
+      updatedInvoices.push(data);
+    }
     await localDb.bank_ledger.put(led);
-    await localDb.purchase_invoices.put(updated);
     await invalidateFresh(FreshKeys.PURCHASES, FreshKeys.DASHBOARD);
-    return { ledger: led, invoice: updated };
+    return { ledger: led, invoices: updatedInvoices };
   }
 
   await localDb.bank_ledger.put(ledger);
-  const updated = {
-    ...inv,
-    amount_paid: newPaid,
-    payment_status: status,
-    updated_at: new Date().toISOString(),
-  };
-  await localDb.purchase_invoices.put(updated);
-  return { ledger, invoice: updated };
+  const updatedInvoices = [];
+  for (const u of updates) {
+    const inv = await localDb.purchase_invoices.get(u.id);
+    const next = { ...inv, ...u };
+    await localDb.purchase_invoices.put(next);
+    updatedInvoices.push(next);
+  }
+  return { ledger, invoices: updatedInvoices };
+}
+
+export async function getSupplierOutstanding(supplierId) {
+  const all = await localDb.purchase_invoices.toArray();
+  let due = 0;
+  for (const i of all) {
+    if (i.supplier_id !== supplierId || i.status !== "POSTED") continue;
+    due += Math.max(0, purchasePayableTotal(i) - toNum(i.amount_paid));
+  }
+  return round2(due);
 }
 
 export async function listBankLedger(limit = 50) {
@@ -1164,6 +1238,21 @@ export async function listSupplierPayments(limit = 40) {
     .slice(0, limit);
 }
 
+export async function listSupplierPaymentsForSupplier(supplierId) {
+  if (!supplierId) return [];
+  const rows = await localDb.bank_ledger.toArray();
+  return rows
+    .filter(
+      (r) =>
+        r.entry_type === "SUPPLIER_PAYMENT" && r.supplier_id === supplierId,
+    )
+    .sort((a, b) => {
+      const d = String(b.entry_date).localeCompare(String(a.entry_date));
+      if (d !== 0) return d;
+      return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+    });
+}
+
 export async function listUnpaidPurchaseInvoices() {
   const all = await localDb.purchase_invoices
     .orderBy("invoice_date")
@@ -1173,4 +1262,35 @@ export async function listUnpaidPurchaseInvoices() {
     if (i.status !== "POSTED") return false;
     return paymentStatus(purchasePayableTotal(i), i.amount_paid) !== "PAID";
   });
+}
+
+/** Suppliers that still have unpaid/partial posted invoices. */
+export async function listSuppliersWithBalance() {
+  const [invoices, suppliers] = await Promise.all([
+    localDb.purchase_invoices.toArray(),
+    localDb.suppliers.toArray(),
+  ]);
+  const map = new Map(suppliers.map((s) => [s.id, s]));
+  const bySup = new Map();
+  for (const inv of invoices) {
+    if (inv.status !== "POSTED" || !inv.supplier_id) continue;
+    const rem = round2(
+      Math.max(0, purchasePayableTotal(inv) - toNum(inv.amount_paid)),
+    );
+    if (rem <= 0.009) continue;
+    if (!bySup.has(inv.supplier_id)) {
+      bySup.set(inv.supplier_id, {
+        id: inv.supplier_id,
+        name: map.get(inv.supplier_id)?.name || "Supplier",
+        remaining: 0,
+        unpaidCount: 0,
+      });
+    }
+    const row = bySup.get(inv.supplier_id);
+    row.remaining = round2(row.remaining + rem);
+    row.unpaidCount += 1;
+  }
+  return [...bySup.values()].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
 }

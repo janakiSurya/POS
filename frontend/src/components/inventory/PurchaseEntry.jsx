@@ -520,7 +520,10 @@ export function PurchaseEntry({ profile, isOwner }) {
         {historyTab === "invoices" ? (
           <PurchaseInvoiceHistory refreshKey={historyKey} />
         ) : (
-          <PurchaseSupplierBalances refreshKey={historyKey} />
+          <PurchaseSupplierBalances
+            refreshKey={historyKey}
+            userId={profile?.id}
+          />
         )}
       </div>
     </div>
