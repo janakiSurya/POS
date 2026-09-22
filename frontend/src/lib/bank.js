@@ -1139,6 +1139,190 @@ export async function paySupplier({
   return { ledger, invoices: updatedInvoices };
 }
 
+async function persistInvoicePaidUpdates(updates) {
+  const updatedInvoices = [];
+  if (supabase && isOnline()) {
+    for (const u of updates) {
+      const { data, error } = await supabase
+        .from("purchase_invoices")
+        .update({
+          amount_paid: u.amount_paid,
+          payment_status: u.payment_status,
+          updated_at: u.updated_at,
+        })
+        .eq("id", u.id)
+        .select()
+        .single();
+      if (error) throw error;
+      await localDb.purchase_invoices.put(data);
+      updatedInvoices.push(data);
+    }
+  } else {
+    for (const u of updates) {
+      const inv = await localDb.purchase_invoices.get(u.id);
+      const next = { ...inv, ...u };
+      await localDb.purchase_invoices.put(next);
+      updatedInvoices.push(next);
+    }
+  }
+  return updatedInvoices;
+}
+
+/** Plan FIFO allocation of `amt` onto unpaid invoices for a supplier. */
+async function planAllocateToSupplier(supplierId, amt) {
+  const invoices = (await localDb.purchase_invoices.toArray())
+    .filter((i) => i.supplier_id === supplierId && i.status === "POSTED")
+    .map((i) => ({
+      ...i,
+      remaining: round2(
+        Math.max(0, purchasePayableTotal(i) - toNum(i.amount_paid)),
+      ),
+    }))
+    .filter((i) => i.remaining > 0.009)
+    .sort((a, b) => {
+      const d = String(a.invoice_date).localeCompare(String(b.invoice_date));
+      if (d !== 0) return d;
+      return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+    });
+
+  let left = round2(amt);
+  const updates = [];
+  for (const inv of invoices) {
+    if (left <= 0.009) break;
+    const take = round2(Math.min(inv.remaining, left));
+    const newPaid = round2(toNum(inv.amount_paid) + take);
+    updates.push({
+      id: inv.id,
+      amount_paid: newPaid,
+      payment_status: paymentStatus(purchasePayableTotal(inv), newPaid),
+      updated_at: new Date().toISOString(),
+    });
+    left = round2(left - take);
+  }
+  if (left > 0.009) {
+    throw new Error("Payment exceeds supplier balance.");
+  }
+  return updates;
+}
+
+/** Plan LIFO reduction of `amt` from amount_paid on invoices. */
+async function planDeallocateFromSupplier(supplierId, amt) {
+  const invoices = (await localDb.purchase_invoices.toArray())
+    .filter((i) => i.supplier_id === supplierId && i.status === "POSTED")
+    .filter((i) => toNum(i.amount_paid) > 0.009)
+    .sort((a, b) => {
+      const d = String(b.invoice_date).localeCompare(String(a.invoice_date));
+      if (d !== 0) return d;
+      return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+    });
+
+  let left = round2(amt);
+  const updates = [];
+  for (const inv of invoices) {
+    if (left <= 0.009) break;
+    const paid = toNum(inv.amount_paid);
+    const take = round2(Math.min(paid, left));
+    const newPaid = round2(paid - take);
+    updates.push({
+      id: inv.id,
+      amount_paid: newPaid,
+      payment_status: paymentStatus(purchasePayableTotal(inv), newPaid),
+      updated_at: new Date().toISOString(),
+    });
+    left = round2(left - take);
+  }
+  if (left > 0.009) {
+    throw new Error("Cannot reduce payment below what is allocated on invoices.");
+  }
+  return updates;
+}
+
+/**
+ * Correct a supplier payment (amount / Cash in hand↔Bank / date / note).
+ */
+export async function updateSupplierPayment({
+  ledgerId,
+  amount,
+  entryDate,
+  note,
+  paymentMode,
+}) {
+  const existing = await localDb.bank_ledger.get(ledgerId);
+  if (!existing || existing.entry_type !== "SUPPLIER_PAYMENT") {
+    throw new Error("Payment not found.");
+  }
+  if (!existing.supplier_id) throw new Error("Payment has no supplier.");
+
+  const amt = round2(amount);
+  if (amt <= 0) throw new Error("Amount must be greater than zero.");
+  const mode = paymentMode === "CASH" ? "CASH" : "BANK";
+  const oldAmt = toNum(existing.amount);
+  const oldMode = existing.payment_mode === "CASH" ? "CASH" : "BANK";
+  const date = entryDate || existing.entry_date || businessDateIST();
+  const noteVal =
+    note === undefined ? existing.note : note?.trim() || null;
+
+  const outstanding = await getSupplierOutstanding(existing.supplier_id);
+  const maxPay = round2(outstanding + oldAmt);
+  if (amt > maxPay + 0.009) {
+    throw new Error(`Payment exceeds supplier balance (₹${maxPay}).`);
+  }
+
+  let cash = await getCashOnHandBalance();
+  let bank = await getBankBalance();
+  if (oldMode === "CASH") cash = round2(cash + oldAmt);
+  else bank = round2(bank + oldAmt);
+  if (mode === "CASH") cash = round2(cash - amt);
+  else bank = round2(bank - amt);
+  if (cash < -0.009) {
+    throw new Error(
+      `Not enough cash in hand after this change (short ₹${round2(-cash)}).`,
+    );
+  }
+  if (bank < -0.009) {
+    throw new Error(
+      `Not enough bank balance after this change (short ₹${round2(-bank)}).`,
+    );
+  }
+
+  const delta = round2(amt - oldAmt);
+  let invoiceUpdates = [];
+  if (delta > 0.009) {
+    invoiceUpdates = await planAllocateToSupplier(existing.supplier_id, delta);
+  } else if (delta < -0.009) {
+    invoiceUpdates = await planDeallocateFromSupplier(
+      existing.supplier_id,
+      round2(-delta),
+    );
+  }
+
+  const patch = {
+    entry_date: date,
+    amount: amt,
+    payment_mode: mode,
+    note: noteVal,
+  };
+
+  if (supabase && isOnline()) {
+    const { data: led, error: lErr } = await supabase
+      .from("bank_ledger")
+      .update(patch)
+      .eq("id", ledgerId)
+      .select()
+      .single();
+    if (lErr) throw lErr;
+    await localDb.bank_ledger.put(led);
+    const invoices = await persistInvoicePaidUpdates(invoiceUpdates);
+    await invalidateFresh(FreshKeys.PURCHASES, FreshKeys.DASHBOARD);
+    return { ledger: led, invoices };
+  }
+
+  const led = { ...existing, ...patch };
+  await localDb.bank_ledger.put(led);
+  const invoices = await persistInvoicePaidUpdates(invoiceUpdates);
+  return { ledger: led, invoices };
+}
+
 export async function getSupplierOutstanding(supplierId) {
   const all = await localDb.purchase_invoices.toArray();
   let due = 0;

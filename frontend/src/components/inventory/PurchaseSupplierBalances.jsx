@@ -10,6 +10,7 @@ import {
   paySupplier,
   purchasePayableTotal,
   syncMoneyFromServer,
+  updateSupplierPayment,
 } from "../../lib/bank";
 import { syncPurchasesIfNeeded, syncSuppliersIfNeeded } from "../../lib/hybridSync";
 import { isOnline } from "../../lib/network";
@@ -67,6 +68,12 @@ export function PurchaseSupplierBalances({ refreshKey = 0, userId }) {
   const [loading, setLoading] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(null);
   const [history, setHistory] = useState([]);
+  const [editPay, setEditPay] = useState(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editDate, setEditDate] = useState(businessDateIST());
+  const [editNote, setEditNote] = useState("");
+  const [editMode, setEditMode] = useState("BANK");
+  const [editError, setEditError] = useState("");
   const [payOpen, setPayOpen] = useState(null);
   const [payAmount, setPayAmount] = useState("");
   const [payDate, setPayDate] = useState(businessDateIST());
@@ -126,7 +133,67 @@ export function PurchaseSupplierBalances({ refreshKey = 0, userId }) {
   async function openHistory(row) {
     if (!row.supplierId) return;
     setHistoryOpen(row);
+    setEditPay(null);
+    setEditError("");
     setHistory(await listSupplierPaymentsForSupplier(row.supplierId));
+  }
+
+  function openEditPay(p) {
+    setEditPay(p);
+    setEditAmount(String(toNum(p.amount)));
+    setEditDate(String(p.entry_date).slice(0, 10));
+    setEditNote(p.note || "");
+    setEditMode(p.payment_mode === "CASH" ? "CASH" : "BANK");
+    setEditError("");
+  }
+
+  async function refreshHistoryHeader(supplierId) {
+    const refreshed = (await localDb.purchase_invoices.toArray()).filter(
+      (i) => i.supplier_id === supplierId && i.status === "POSTED",
+    );
+    let total = 0;
+    let paid = 0;
+    for (const inv of refreshed) {
+      const payable = purchasePayableTotal(inv);
+      total += payable;
+      paid += toNum(inv.amount_paid);
+    }
+    setHistoryOpen((prev) =>
+      prev && prev.supplierId === supplierId
+        ? {
+            ...prev,
+            total: round2(total),
+            paid: round2(paid),
+            remaining: round2(Math.max(0, total - paid)),
+          }
+        : prev,
+    );
+  }
+
+  async function saveEditPay(e) {
+    e.preventDefault();
+    if (!editPay || !historyOpen?.supplierId) return;
+    setPending(true);
+    setEditError("");
+    try {
+      await updateSupplierPayment({
+        ledgerId: editPay.id,
+        amount: editAmount,
+        entryDate: editDate,
+        note: editNote,
+        paymentMode: editMode,
+      });
+      setEditPay(null);
+      setHistory(
+        await listSupplierPaymentsForSupplier(historyOpen.supplierId),
+      );
+      await refreshHistoryHeader(historyOpen.supplierId);
+      await load(true);
+    } catch (err) {
+      setEditError(err.message || "Could not update payment.");
+    } finally {
+      setPending(false);
+    }
   }
 
   function openPay(row) {
@@ -324,7 +391,11 @@ export function PurchaseSupplierBalances({ refreshKey = 0, userId }) {
 
       <Modal
         open={Boolean(historyOpen)}
-        onClose={() => setHistoryOpen(null)}
+        onClose={() => {
+          setHistoryOpen(null);
+          setEditPay(null);
+          setEditError("");
+        }}
         title={`Payment history — ${historyOpen?.name || ""}`}
       >
         <p className="mb-3 text-sm text-fog">
@@ -340,7 +411,8 @@ export function PurchaseSupplierBalances({ refreshKey = 0, userId }) {
           {" of "}
           {formatInr(historyOpen?.total)}
         </p>
-        {historyOpen?.remaining > 0.009 && userId ? (
+        {editError ? <p className="mb-2 text-sm text-danger">{editError}</p> : null}
+        {historyOpen?.remaining > 0.009 && userId && !editPay ? (
           <Button
             type="button"
             className="mb-3 w-full text-sm"
@@ -359,6 +431,84 @@ export function PurchaseSupplierBalances({ refreshKey = 0, userId }) {
           <div className="max-h-[55vh] space-y-2 overflow-y-auto">
             {history.map((p) => {
               const mode = p.payment_mode === "CASH" ? "Cash in hand" : "Bank";
+              const editing = editPay?.id === p.id;
+              if (editing) {
+                return (
+                  <form
+                    key={p.id}
+                    onSubmit={saveEditPay}
+                    className="space-y-3 rounded-lg border border-action bg-paper px-3 py-3"
+                  >
+                    <p className="text-sm font-medium text-ink">Edit payment</p>
+                    <div>
+                      <Label>Pay from</Label>
+                      <div className="mt-1 grid grid-cols-2 gap-2">
+                        {[
+                          { id: "CASH", label: "Cash in hand" },
+                          { id: "BANK", label: "Bank" },
+                        ].map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setEditMode(opt.id)}
+                            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                              editMode === opt.id
+                                ? "border-action bg-action text-canvas"
+                                : "border-ash bg-canvas text-fog hover:text-ink"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Amount (₹)</Label>
+                      <Input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={editAmount}
+                        onChange={(ev) => setEditAmount(ev.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Date</Label>
+                      <Input
+                        type="date"
+                        value={editDate}
+                        onChange={(ev) => setEditDate(ev.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Note</Label>
+                      <Input
+                        value={editNote}
+                        onChange={(ev) => setEditNote(ev.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="flex-1"
+                        disabled={pending}
+                        onClick={() => {
+                          setEditPay(null);
+                          setEditError("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" className="flex-1" disabled={pending}>
+                        {pending ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
+                  </form>
+                );
+              }
               return (
                 <div
                   key={p.id}
@@ -371,9 +521,18 @@ export function PurchaseSupplierBalances({ refreshKey = 0, userId }) {
                       {p.note ? ` · ${p.note}` : ""}
                     </p>
                   </div>
-                  <p className="shrink-0 text-sm font-semibold tabular-nums text-ink">
-                    −{formatInr(p.amount)}
-                  </p>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <p className="text-sm font-semibold tabular-nums text-ink">
+                      −{formatInr(p.amount)}
+                    </p>
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-action hover:underline"
+                      onClick={() => openEditPay(p)}
+                    >
+                      Edit
+                    </button>
+                  </div>
                 </div>
               );
             })}
