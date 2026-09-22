@@ -448,38 +448,18 @@ export async function createPurchaseInvoice({
   return row;
 }
 
-/**
- * Local / unregistered supplier buy (no GST bill).
- * Creates/updates product, posts stock, supplier due — marked exclude_from_gst.
- *
- * Example: Suresh, 10 MRF tires @ ₹200 cost, sell ₹300 each.
- */
-export async function createLocalPurchase({
-  supplierId,
-  itemName,
-  partNumber,
-  quantity,
-  costPerUnit,
-  sellingPrice,
-  invoiceDate,
-  invoiceNumber,
-  notes,
-  createdBy,
-  uom = "PCS",
-}) {
-  if (!supplierId) throw new Error("Select a supplier.");
-  const name = String(itemName || "").trim();
-  if (!name) throw new Error("Enter item name.");
-  const qty = Math.round(toNum(quantity));
-  if (qty <= 0) throw new Error("Quantity must be greater than zero.");
-  const cost = round2(costPerUnit);
-  if (cost < 0) throw new Error("Cost cannot be negative.");
-  const sell = round2(sellingPrice);
-  if (sell <= 0) throw new Error("Enter selling price.");
-  const date = invoiceDate || new Date().toISOString().slice(0, 10);
-  const total = round2(cost * qty);
+function normalizeLocalBuyLine(raw, index) {
+  const name = String(raw.itemName || raw.name || "").trim();
+  if (!name) throw new Error(`Line ${index + 1}: enter item name.`);
+  const qty = Math.round(toNum(raw.quantity));
+  if (qty <= 0) throw new Error(`Line ${index + 1}: quantity must be greater than zero.`);
+  const cost = round2(raw.costPerUnit ?? raw.unit_cost);
+  if (cost < 0) throw new Error(`Line ${index + 1}: cost cannot be negative.`);
+  const sell = round2(raw.sellingPrice ?? raw.mrp);
+  if (sell <= 0) throw new Error(`Line ${index + 1}: enter selling price.`);
+  const uom = String(raw.uom || "PCS").trim() || "PCS";
 
-  let code = String(partNumber || "")
+  let code = String(raw.partNumber || raw.part_number || "")
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "-");
@@ -492,10 +472,18 @@ export async function createLocalPurchase({
     code = `LOCAL-${slug || "ITEM"}`;
   }
 
-  const invNo =
-    String(invoiceNumber || "").trim() ||
-    `LOCAL-${date.replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+  return {
+    name,
+    code,
+    qty,
+    cost,
+    sell,
+    uom,
+    lineTotal: round2(cost * qty),
+  };
+}
 
+async function upsertLocalProduct({ code, name, cost, sell, uom }) {
   let product = await catalogGetByPart(code);
   if (!product) {
     product = {
@@ -522,32 +510,76 @@ export async function createLocalPurchase({
     }
     await catalogPut(product);
     upsertSearchProduct(product);
-  } else {
-    const updated_at = new Date().toISOString();
-    const patch = {
-      purchase_price: cost,
-      selling_price: sell,
-      name: name || product.name,
-      exclude_from_gst: true,
-      updated_at,
-    };
-    if (supabase && navigator.onLine) {
-      const { data, error } = await supabase
-        .from("products")
-        .update(patch)
-        .eq("id", product.id)
-        .select()
-        .single();
-      if (error) throw error;
-      product = data;
-      await catalogPut(data);
-      upsertSearchProduct(data);
-    } else {
-      await catalogUpdate(product.id, patch);
-      product = await catalogGet(product.id);
-      if (product) upsertSearchProduct(product);
-    }
+    return product;
   }
+
+  const updated_at = new Date().toISOString();
+  const patch = {
+    purchase_price: cost,
+    selling_price: sell,
+    name: name || product.name,
+    exclude_from_gst: true,
+    updated_at,
+  };
+  if (supabase && navigator.onLine) {
+    const { data, error } = await supabase
+      .from("products")
+      .update(patch)
+      .eq("id", product.id)
+      .select()
+      .single();
+    if (error) throw error;
+    product = data;
+    await catalogPut(data);
+    upsertSearchProduct(data);
+  } else {
+    await catalogUpdate(product.id, patch);
+    product = await catalogGet(product.id);
+    if (product) upsertSearchProduct(product);
+  }
+  return product;
+}
+
+/**
+ * Local / unregistered supplier buy (no GST bill).
+ * Creates/updates products, posts stock, supplier due — marked exclude_from_gst.
+ *
+ * Pass `lines: [{ itemName, partNumber, quantity, costPerUnit, sellingPrice, uom }]`
+ * or a single item via top-level fields (legacy).
+ */
+export async function createLocalPurchase({
+  supplierId,
+  lines: rawLines,
+  itemName,
+  partNumber,
+  quantity,
+  costPerUnit,
+  sellingPrice,
+  invoiceDate,
+  invoiceNumber,
+  notes,
+  createdBy,
+  uom = "PCS",
+}) {
+  if (!supplierId) throw new Error("Select a supplier.");
+
+  const sourceLines =
+    Array.isArray(rawLines) && rawLines.length
+      ? rawLines
+      : [{ itemName, partNumber, quantity, costPerUnit, sellingPrice, uom }];
+
+  const lines = sourceLines.map((l, i) => normalizeLocalBuyLine(l, i));
+  const date = invoiceDate || new Date().toISOString().slice(0, 10);
+  const total = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
+
+  const invNo =
+    String(invoiceNumber || "").trim() ||
+    `LOCAL-${date.replace(/-/g, "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+
+  const names = lines.map((l) => l.name).join(", ");
+  const noteText =
+    notes?.trim() ||
+    `Local buy (no GST) · ${lines.length} item${lines.length === 1 ? "" : "s"} · ${names}`;
 
   const invoice = await createPurchaseInvoice({
     supplierId,
@@ -557,7 +589,7 @@ export async function createLocalPurchase({
     status: "POSTED",
     source: "LOCAL",
     invoiceType: "LOCAL",
-    notes: notes?.trim() || `Local buy (no GST) · ${name}`,
+    notes: noteText,
     printedTaxable: total,
     printedCgst: 0,
     printedSgst: 0,
@@ -565,27 +597,33 @@ export async function createLocalPurchase({
     excludeFromGst: true,
   });
 
-  await postPurchaseLine({
-    productId: product.id,
-    partNumber: product.part_number,
-    description: name,
-    quantity: qty,
-    unitCost: cost,
-    applyCost: true,
-    purchaseInvoiceId: invoice.id,
-    lineNo: 1,
-    uom: uom || "PCS",
-    mrp: sell,
-    taxable: total,
-    cgstPercent: 0,
-    cgstAmount: 0,
-    sgstPercent: 0,
-    sgstAmount: 0,
-    lineTotal: total,
-    gstPercent: 0,
-  });
+  const products = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const product = await upsertLocalProduct(line);
+    products.push(product);
+    await postPurchaseLine({
+      productId: product.id,
+      partNumber: product.part_number,
+      description: line.name,
+      quantity: line.qty,
+      unitCost: line.cost,
+      applyCost: true,
+      purchaseInvoiceId: invoice.id,
+      lineNo: i + 1,
+      uom: line.uom,
+      mrp: line.sell,
+      taxable: line.lineTotal,
+      cgstPercent: 0,
+      cgstAmount: 0,
+      sgstPercent: 0,
+      sgstAmount: 0,
+      lineTotal: line.lineTotal,
+      gstPercent: 0,
+    });
+  }
 
-  return { invoice, product, total };
+  return { invoice, products, product: products[0] || null, total, lineCount: lines.length };
 }
 
 export async function syncPurchaseInvoicesFromServer(limit = 200) {
